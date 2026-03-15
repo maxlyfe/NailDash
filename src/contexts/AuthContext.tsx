@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
@@ -32,44 +32,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [salon, setSalon] = useState<Salon | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
-  const fetchingRef = useRef(false);
-  const salonLoadedRef = useRef(false);
 
   useEffect(() => {
-    const fetchOrCreateSalon = async (u: User) => {
-      // Prevent concurrent calls
-      if (fetchingRef.current) return;
-      // If we already loaded salon for this user, skip
-      if (salonLoadedRef.current) return;
+    let cancelled = false;
 
-      fetchingRef.current = true;
+    const fetchSalon = async (u: User) => {
       try {
         // Try to find salon owned by this user
-        const { data: owned, error: ownedErr } = await supabase
+        const { data: owned } = await supabase
           .from('salons')
           .select('id, name, owner_id, business_hours')
           .eq('owner_id', u.id)
           .limit(1)
-          .single();
+          .maybeSingle();
 
-        if (owned && !ownedErr) {
-          setSalon(owned);
-          salonLoadedRef.current = true;
-          return;
-        }
+        if (cancelled) return;
+        if (owned) { setSalon(owned); return; }
 
-        // Fallback: any salon visible via RLS
-        const { data: visible, error: visibleErr } = await supabase
+        // Fallback: any salon visible via RLS (e.g. staff member)
+        const { data: visible } = await supabase
           .from('salons')
           .select('id, name, owner_id, business_hours')
           .limit(1)
-          .single();
+          .maybeSingle();
 
-        if (visible && !visibleErr) {
-          setSalon(visible);
-          salonLoadedRef.current = true;
-          return;
-        }
+        if (cancelled) return;
+        if (visible) { setSalon(visible); return; }
 
         // No salon found — auto-create for new user
         const displayName = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Meu Salão';
@@ -91,64 +79,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('id, name, owner_id, business_hours')
           .single();
 
+        if (cancelled) return;
         if (created && !createErr) {
           setSalon(created);
-          salonLoadedRef.current = true;
         } else {
           console.error('Failed to create salon:', createErr?.message);
-          // Mark as loaded to prevent infinite retries
-          salonLoadedRef.current = true;
         }
       } catch (err) {
-        console.error('fetchOrCreateSalon error:', err);
-        salonLoadedRef.current = true;
-      } finally {
-        fetchingRef.current = false;
+        console.error('fetchSalon error:', err);
       }
     };
 
-    let initialized = false;
-
-    const init = async () => {
-      try {
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        setUser(currentUser);
-        if (currentUser) {
-          await fetchOrCreateSalon(currentUser);
-        }
-      } catch (err) {
-        console.error('Auth init error:', err);
-      } finally {
-        initialized = true;
-        setLoading(false);
-      }
-    };
-
-    init();
-
+    // onAuthStateChange fires INITIAL_SESSION immediately (sync) with current session
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
+        if (cancelled) return;
+
         const sessionUser = session?.user ?? null;
         setUser(sessionUser);
 
         if (!sessionUser) {
           setSalon(null);
-          salonLoadedRef.current = false;
+          setLoading(false);
           return;
         }
 
-        // Only fetch salon on actual sign-in, not token refresh
-        if (event === 'SIGNED_IN') {
-          salonLoadedRef.current = false; // Reset for new sign-in
-          await fetchOrCreateSalon(sessionUser);
-          // If init hasn't finished yet, don't touch loading
-          if (!initialized) return;
-          setLoading(false);
+        // Fetch salon on initial load and new sign-in
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+          await fetchSalon(sessionUser);
+          if (!cancelled) setLoading(false);
         }
       }
     );
 
-    return () => subscription.unsubscribe();
+    // Safety timeout — if nothing fires in 5 seconds, stop loading
+    const timeout = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
@@ -159,7 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(null);
     setSalon(null);
-    salonLoadedRef.current = false;
     window.location.href = '/login';
   };
 
