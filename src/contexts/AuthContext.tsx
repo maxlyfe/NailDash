@@ -33,35 +33,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   const fetchingRef = useRef(false);
-  const salonLoadedRef = useRef(false);
+  const salonFoundRef = useRef(false); // Only true when salon was successfully loaded
 
   useEffect(() => {
     let cancelled = false;
 
-    const fetchSalon = async (u: User) => {
-      if (fetchingRef.current || salonLoadedRef.current) return;
+    const fetchSalon = async (u: User): Promise<boolean> => {
+      if (fetchingRef.current) return salonFoundRef.current;
+      if (salonFoundRef.current) return true;
       fetchingRef.current = true;
+
       try {
         // Try to find salon owned by this user
-        const { data: owned } = await supabase
+        const { data: owned, error: ownedErr } = await supabase
           .from('salons')
           .select('id, name, owner_id, business_hours')
           .eq('owner_id', u.id)
           .limit(1)
           .maybeSingle();
 
-        if (cancelled) { fetchingRef.current = false; return; }
-        if (owned) { setSalon(owned); salonLoadedRef.current = true; fetchingRef.current = false; return; }
+        if (cancelled) { fetchingRef.current = false; return false; }
+
+        // If query failed (auth error, RLS), DON'T mark as loaded — allow retry after token refresh
+        if (ownedErr) {
+          console.warn('fetchSalon owned query error:', ownedErr.message);
+          fetchingRef.current = false;
+          return false;
+        }
+
+        if (owned) {
+          setSalon(owned);
+          salonFoundRef.current = true;
+          fetchingRef.current = false;
+          return true;
+        }
 
         // Fallback: any salon visible via RLS (e.g. staff member)
-        const { data: visible } = await supabase
+        const { data: visible, error: visibleErr } = await supabase
           .from('salons')
           .select('id, name, owner_id, business_hours')
           .limit(1)
           .maybeSingle();
 
-        if (cancelled) { fetchingRef.current = false; return; }
-        if (visible) { setSalon(visible); salonLoadedRef.current = true; fetchingRef.current = false; return; }
+        if (cancelled) { fetchingRef.current = false; return false; }
+        if (visibleErr) {
+          console.warn('fetchSalon visible query error:', visibleErr.message);
+          fetchingRef.current = false;
+          return false;
+        }
+
+        if (visible) {
+          setSalon(visible);
+          salonFoundRef.current = true;
+          fetchingRef.current = false;
+          return true;
+        }
 
         // No salon found — auto-create for new user
         const displayName = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Meu Salão';
@@ -83,59 +109,94 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('id, name, owner_id, business_hours')
           .single();
 
-        if (cancelled) { fetchingRef.current = false; return; }
+        if (cancelled) { fetchingRef.current = false; return false; }
         if (created && !createErr) {
           setSalon(created);
-          salonLoadedRef.current = true;
-        } else {
-          console.error('Failed to create salon:', createErr?.message);
-          salonLoadedRef.current = true; // Mark as attempted to avoid infinite retry
+          salonFoundRef.current = true;
+          fetchingRef.current = false;
+          return true;
         }
+
+        console.error('Failed to create salon:', createErr?.message);
+        // DON'T mark as loaded on failure — allow retry after TOKEN_REFRESHED
+        fetchingRef.current = false;
+        return false;
       } catch (err) {
         console.error('fetchSalon error:', err);
-        salonLoadedRef.current = true;
-      } finally {
         fetchingRef.current = false;
+        return false;
       }
     };
 
-    // onAuthStateChange fires INITIAL_SESSION immediately (sync) with current session
+    // Step 1: Validate session with getUser() (forces server-side token check + refresh)
+    const init = async () => {
+      try {
+        const { data: { user: validUser }, error } = await supabase.auth.getUser();
+
+        if (cancelled) return;
+
+        if (error || !validUser) {
+          // No valid session — stop loading, user will be redirected by middleware
+          setUser(null);
+          setSalon(null);
+          setLoading(false);
+          return;
+        }
+
+        setUser(validUser);
+        await fetchSalon(validUser);
+        if (!cancelled) setLoading(false);
+      } catch (err) {
+        console.error('Auth init error:', err);
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    init();
+
+    // Step 2: Listen for auth changes (SIGNED_IN after OAuth, TOKEN_REFRESHED for session renewal)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
         if (cancelled) return;
 
         const sessionUser = session?.user ?? null;
-        setUser(sessionUser);
 
         if (!sessionUser) {
+          setUser(null);
           setSalon(null);
-          salonLoadedRef.current = false;
+          salonFoundRef.current = false;
           fetchingRef.current = false;
           // Don't stop loading if OAuth code exchange is pending
           if (event === 'INITIAL_SESSION' && typeof window !== 'undefined' && window.location.search.includes('code=')) {
-            // PKCE flow: code will be exchanged, then SIGNED_IN fires
             return;
           }
           setLoading(false);
           return;
         }
 
-        // Fetch salon on initial load and new sign-in
+        setUser(sessionUser);
+
+        // On SIGNED_IN (fresh login), always retry salon fetch
         if (event === 'SIGNED_IN') {
-          salonLoadedRef.current = false;
+          salonFoundRef.current = false;
           fetchingRef.current = false;
+          await fetchSalon(sessionUser);
+          if (!cancelled) setLoading(false);
         }
-        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+
+        // On TOKEN_REFRESHED, retry salon fetch if it failed previously
+        if (event === 'TOKEN_REFRESHED' && !salonFoundRef.current) {
+          fetchingRef.current = false;
           await fetchSalon(sessionUser);
           if (!cancelled) setLoading(false);
         }
       }
     );
 
-    // Safety timeout — if nothing fires in 15 seconds, stop loading
+    // Safety timeout — if nothing resolves in 10 seconds, stop loading
     const timeout = setTimeout(() => {
       if (!cancelled) setLoading(false);
-    }, 15000);
+    }, 10000);
 
     return () => {
       cancelled = true;
@@ -152,7 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(null);
     setSalon(null);
-    salonLoadedRef.current = false;
+    salonFoundRef.current = false;
     fetchingRef.current = false;
     window.location.href = '/login';
   };
