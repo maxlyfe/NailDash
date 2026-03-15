@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sidebar-width: 256px;
+    --header-height: 56px;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-nd-bg text-nd-text antialiased;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-nd-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-nd-muted/40; }
+
+  ::selection {
+    @apply bg-nd-accent/15 text-nd-accent;
+  }
+}
+
+@layer components {
+  /* Cards */
+  .card {
+    @apply bg-nd-card rounded-2xl border border-nd-border/60 shadow-soft;
+  }
+  .card-glow {
+    @apply card transition-all duration-300;
+  }
+  .card-glow:hover {
+    @apply shadow-soft-lg border-nd-accent/30;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-nd-accent text-white font-semibold text-sm rounded-xl
+           transition-all duration-200
+           hover:bg-nd-accent-dim hover:shadow-glow
+           active:scale-[0.97]
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-nd-surface text-nd-text font-medium text-sm rounded-xl
+           border border-nd-border
+           transition-all duration-200
+           hover:bg-nd-border/30 hover:border-nd-border-glow
+           active:scale-[0.97];
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2
+           text-nd-muted font-medium text-sm rounded-xl
+           transition-all duration-200
+           hover:bg-nd-surface hover:text-nd-text;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-nd-danger/10 text-nd-danger font-medium text-sm rounded-xl
+           border border-nd-danger/20
+           transition-all duration-200
+           hover:bg-nd-danger/15;
+  }
+
+  /* Inputs */
+  .input-field {
+    @apply w-full px-4 py-2.5 bg-white rounded-xl
+           border border-nd-border text-nd-text text-sm
+           placeholder:text-nd-muted/50
+           transition-all duration-200
+           focus:outline-none focus:border-nd-accent/50 focus:ring-2 focus:ring-nd-accent/10
+           shadow-inner-soft;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide;
+  }
+  .badge-success { @apply badge bg-nd-success/10 text-nd-success; }
+  .badge-warning { @apply badge bg-nd-warning/10 text-nd-warning; }
+  .badge-danger  { @apply badge bg-nd-danger/10 text-nd-danger; }
+  .badge-info    { @apply badge bg-nd-accent/10 text-nd-accent; }
+  .badge-muted   { @apply badge bg-nd-surface text-nd-muted; }
+
+  /* Typography */
+  .page-title {
+    @apply text-xl font-display font-bold text-nd-heading tracking-tight;
+  }
+  .section-label {
+    @apply text-[10px] font-semibold uppercase tracking-[0.12em] text-nd-muted;
+  }
+  .mono-value {
+    @apply tabular-nums font-semibold text-nd-heading;
+  }
+
+  /* Dividers */
+  .divider {
+    @apply border-t border-nd-border/60;
+  }
+}
+
+/* Subtle background pattern */
+.bg-pattern {
+  background-image: radial-gradient(rgba(200, 149, 108, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Warm gradient overlay */
+.warm-glow {
+  background: radial-gradient(ellipse at top, rgba(232, 180, 160, 0.08), transparent 60%);
+}

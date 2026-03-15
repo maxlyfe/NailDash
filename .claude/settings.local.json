@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"C:\\\\Users\\\\maxly\\\\OneDrive\\\\Desktop\\\\NailDash/src/app\"/**/*.tsx)",
+      "Bash(ls -lh \"C:\\\\Users\\\\maxly\\\\OneDrive\\\\Desktop\\\\NailDash/src/app\"/**/*.tsx)",
+      "Bash(du -sh \"C:\\\\Users\\\\maxly\\\\OneDrive\\\\Desktop\\\\NailDash\"/*)",
+      "Bash(npm run build)",
+      "mcp__e5a7a863-fa9b-46b9-8270-654561990dc0__list_projects",
+      "Bash(curl -s \"https://yefkehvdtykucjajfdcs.supabase.co/rest/v1/\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllZmtlaHZkdHlrdWNqYWpmZGNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMTY1NTQsImV4cCI6MjA4ODU5MjU1NH0.mfRk1S06qVrYqgF0-asjosel9Y0IZmyTj3DtAwHloE0\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllZmtlaHZkdHlrdWNqYWpmZGNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMTY1NTQsImV4cCI6MjA4ODU5MjU1NH0.mfRk1S06qVrYqgF0-asjosel9Y0IZmyTj3DtAwHloE0\")",
+      "Bash(node _inspect_schema.js)",
+      "Bash(npx next:*)",
+      "Bash(ls \"C:/Users/maxly/OneDrive/Desktop/NailDash/src/app/\\(dashboard\\)/\")"
+    ]
+  }
+}

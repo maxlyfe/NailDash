@@ -1,0 +1,657 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useSupabase } from '@/lib/supabase/use-supabase';
+import {
+  DollarSign, TrendingUp, TrendingDown, BarChart3, Loader2,
+  Plus, X, Save, Trash2, CreditCard, Banknote, Smartphone,
+  ArrowRightLeft, Calendar, ChevronLeft, ChevronRight,
+  Wallet, PiggyBank, UserCheck,
+} from 'lucide-react';
+
+type TabView = 'resumo' | 'receitas' | 'despesas' | 'fechamento';
+type TxModalMode = 'closed' | 'receita' | 'despesa' | 'salario' | 'adiantamento';
+
+type TxRow = {
+  id: string;
+  type: string;
+  description: string | null;
+  total_amount: number;
+  payment_card: number;
+  payment_cash: number;
+  payment_transfer: number;
+  payment_pix: number;
+  transaction_date: string;
+  category: string | null;
+  installment_number: number | null;
+  installment_total: number | null;
+  client?: any;
+  professional?: any;
+};
+
+type MonthlyClosing = {
+  id: string;
+  month: string;
+  starting_balance: number;
+  starting_cash: number;
+  starting_bank: number;
+  is_closed: boolean;
+  notes: string | null;
+};
+
+export default function FinanceiroPage() {
+  const { salon, loading: authLoading } = useAuth();
+  const supabase = useSupabase();
+
+  const [tab, setTab] = useState<TabView>('resumo');
+  const [transactions, setTransactions] = useState<TxRow[]>([]);
+  const [closing, setClosing] = useState<MonthlyClosing | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<TxModalMode>('closed');
+  const [saving, setSaving] = useState(false);
+
+  // Current month navigation
+  const [monthDate, setMonthDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  const monthStart = `${monthDate}-01`;
+  const monthLabel = (() => {
+    const [y, m] = monthDate.split('-');
+    const d = new Date(parseInt(y), parseInt(m) - 1, 1);
+    return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  })();
+
+  const monthEndDate = (() => {
+    const [y, m] = monthDate.split('-');
+    const d = new Date(parseInt(y), parseInt(m), 0);
+    return `${y}-${m}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+
+  // Form
+  const [form, setForm] = useState({
+    description: '', total_amount: '', category: '',
+    payment_method: 'pix' as 'pix' | 'cash' | 'card' | 'transfer',
+    installments: '1', transaction_date: new Date().toISOString().split('T')[0],
+    notes: '',
+  });
+
+  const navigateMonth = (delta: number) => {
+    const [y, m] = monthDate.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setMonthDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const fetchData = useCallback(async () => {
+    if (!salon?.id) {
+      if (!authLoading) setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const [txRes, closingRes] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total, client:clients(name), professional:professionals(name)')
+          .eq('salon_id', salon.id)
+          .gte('transaction_date', `${monthStart}T00:00:00`)
+          .lte('transaction_date', `${monthEndDate}T23:59:59`)
+          .order('transaction_date', { ascending: false }),
+        supabase
+          .from('monthly_closings')
+          .select('*')
+          .eq('salon_id', salon.id)
+          .eq('month', monthStart)
+          .maybeSingle(),
+      ]);
+      setTransactions((txRes.data || []) as TxRow[]);
+      setClosing(closingRes.data as MonthlyClosing | null);
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  }, [salon?.id, monthDate, authLoading]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Computed
+  const sales = transactions.filter(t => t.type === 'sale');
+  const expenses = transactions.filter(t => t.type === 'expense');
+  const salaries = transactions.filter(t => t.type === 'salary' || t.type === 'thirteenth');
+  const advances = transactions.filter(t => t.type === 'advance');
+
+  const totalRevenue = sales.reduce((s, t) => s + t.total_amount, 0);
+  const revenuePix = sales.reduce((s, t) => s + t.payment_pix, 0);
+  const revenueCash = sales.reduce((s, t) => s + t.payment_cash, 0);
+  const revenueCard = sales.reduce((s, t) => s + t.payment_card, 0);
+  const revenueTransfer = sales.reduce((s, t) => s + t.payment_transfer, 0);
+
+  const totalExpenses = expenses.reduce((s, t) => s + t.total_amount, 0);
+  const expensePix = expenses.reduce((s, t) => s + t.payment_pix, 0);
+  const expenseCash = expenses.reduce((s, t) => s + t.payment_cash, 0);
+  const expenseCard = expenses.reduce((s, t) => s + t.payment_card, 0);
+  const expenseTransfer = expenses.reduce((s, t) => s + t.payment_transfer, 0);
+
+  const totalSalaries = salaries.reduce((s, t) => s + t.total_amount, 0);
+  const totalAdvances = advances.reduce((s, t) => s + t.total_amount, 0);
+
+  const startingBalance = closing?.starting_balance || 0;
+  const fundoCaixa = startingBalance + totalRevenue - totalExpenses - totalSalaries;
+
+  const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  // Save transaction
+  const handleSave = async () => {
+    if (!salon?.id || !form.description.trim() || !form.total_amount) return;
+    setSaving(true);
+    try {
+      const amount = parseFloat(form.total_amount) || 0;
+      const installments = parseInt(form.installments) || 1;
+      const typeMap: Record<TxModalMode, string> = {
+        receita: 'sale', despesa: 'expense', salario: 'salary', adiantamento: 'advance', closed: '',
+      };
+
+      for (let i = 0; i < installments; i++) {
+        const installmentAmount = installments > 1 ? amount / installments : amount;
+        const txDate = new Date(form.transaction_date);
+        txDate.setMonth(txDate.getMonth() + i);
+
+        const payload: any = {
+          salon_id: salon.id,
+          type: typeMap[modal],
+          description: form.description.trim(),
+          total_amount: installmentAmount,
+          category: form.category.trim() || null,
+          transaction_date: txDate.toISOString(),
+          payment_pix: form.payment_method === 'pix' ? installmentAmount : 0,
+          payment_cash: form.payment_method === 'cash' ? installmentAmount : 0,
+          payment_card: form.payment_method === 'card' ? installmentAmount : 0,
+          payment_transfer: form.payment_method === 'transfer' ? installmentAmount : 0,
+          installment_number: installments > 1 ? i + 1 : null,
+          installment_total: installments > 1 ? installments : null,
+        };
+
+        const { error } = await supabase.from('transactions').insert(payload);
+        if (error) { alert(`Erro: ${error.message}`); break; }
+      }
+
+      setModal('closed');
+      await fetchData();
+    } catch (e: any) { alert(`Erro: ${e.message}`); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Excluir esta transação?')) return;
+    await supabase.from('transactions').delete().eq('id', id);
+    fetchData();
+  };
+
+  // Save monthly closing
+  const saveClosing = async (field: string, value: number) => {
+    if (!salon?.id) return;
+    if (closing) {
+      await supabase.from('monthly_closings').update({ [field]: value }).eq('id', closing.id);
+    } else {
+      await supabase.from('monthly_closings').insert({
+        salon_id: salon.id,
+        month: monthStart,
+        [field]: value,
+      });
+    }
+    fetchData();
+  };
+
+  const openModal = (type: TxModalMode) => {
+    setForm({
+      description: '', total_amount: '', category: '',
+      payment_method: 'pix', installments: '1',
+      transaction_date: new Date().toISOString().split('T')[0], notes: '',
+    });
+    setModal(type);
+  };
+
+  const TABS: { id: TabView; label: string }[] = [
+    { id: 'resumo', label: 'Resumo' },
+    { id: 'receitas', label: 'Receitas' },
+    { id: 'despesas', label: 'Despesas' },
+    { id: 'fechamento', label: 'Fechamento' },
+  ];
+
+  const modalTitles: Record<TxModalMode, string> = {
+    receita: 'Nova Receita', despesa: 'Nova Despesa',
+    salario: 'Registrar Salário', adiantamento: 'Registrar Adiantamento', closed: '',
+  };
+
+  const getClientName = (tx: TxRow) => {
+    if (!tx.client) return null;
+    return Array.isArray(tx.client) ? tx.client[0]?.name : tx.client?.name;
+  };
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="page-title">Financeiro</h1>
+          <p className="text-nd-muted text-sm mt-1">Controle financeiro completo</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => openModal('receita')} className="btn-primary text-sm">
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Receita</span>
+          </button>
+          <button onClick={() => openModal('despesa')} className="btn-secondary text-sm">
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Despesa</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Month nav */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigateMonth(-1)} className="btn-ghost p-2">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-semibold text-nd-heading capitalize min-w-[140px] text-center">{monthLabel}</span>
+          <button onClick={() => navigateMonth(1)} className="btn-ghost p-2">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+        {/* Tabs */}
+        <div className="flex gap-1 bg-nd-surface rounded-xl p-0.5">
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`text-xs px-3 py-1.5 rounded-lg transition-all ${tab === t.id ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="card p-10 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-nd-accent" />
+        </div>
+      ) : (
+        <>
+          {/* ══ RESUMO ══ */}
+          {tab === 'resumo' && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <StatCard label="Faturamento" value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
+                <StatCard label="Despesas" value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
+                <StatCard label="Salários" value={fmt(totalSalaries)} color="text-nd-warning" icon={UserCheck} iconBg="bg-nd-warning/10" />
+                <StatCard label="Saldo" value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
+              </div>
+
+              {/* Revenue breakdown */}
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="card p-5">
+                  <h3 className="section-label mb-3">Faturamento por forma</h3>
+                  <div className="space-y-2">
+                    <PayRow icon={Smartphone} label="PIX" value={fmt(revenuePix)} />
+                    <PayRow icon={Banknote} label="Dinheiro" value={fmt(revenueCash)} />
+                    <PayRow icon={CreditCard} label="Cartão" value={fmt(revenueCard)} />
+                    <PayRow icon={ArrowRightLeft} label="Transferência" value={fmt(revenueTransfer)} />
+                  </div>
+                  <div className="divider mt-3 pt-3">
+                    <div className="flex justify-between text-sm font-semibold">
+                      <span className="text-nd-heading">Em banco (PIX+Cartão+TED)</span>
+                      <span className="text-nd-accent">{fmt(revenuePix + revenueCard + revenueTransfer)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-semibold mt-1">
+                      <span className="text-nd-heading">Em dinheiro</span>
+                      <span className="text-nd-success">{fmt(revenueCash)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card p-5">
+                  <h3 className="section-label mb-3">Despesas por forma</h3>
+                  <div className="space-y-2">
+                    <PayRow icon={Smartphone} label="PIX" value={fmt(expensePix)} />
+                    <PayRow icon={Banknote} label="Dinheiro" value={fmt(expenseCash)} />
+                    <PayRow icon={CreditCard} label="Cartão" value={fmt(expenseCard)} />
+                    <PayRow icon={ArrowRightLeft} label="Transferência" value={fmt(expenseTransfer)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Advances */}
+              {advances.length > 0 && (
+                <div className="card p-5 border-nd-warning/30">
+                  <h3 className="section-label mb-2">Adiantamentos</h3>
+                  <p className="text-lg font-bold text-nd-warning">{fmt(totalAdvances)}</p>
+                  <p className="text-xs text-nd-muted mt-1">Valor reservado para o mês seguinte</p>
+                </div>
+              )}
+
+              {/* Quick actions */}
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => openModal('salario')} className="btn-ghost text-xs">
+                  <UserCheck className="w-3.5 h-3.5" /> Salário
+                </button>
+                <button onClick={() => openModal('adiantamento')} className="btn-ghost text-xs">
+                  <Wallet className="w-3.5 h-3.5" /> Adiantamento
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ══ RECEITAS ══ */}
+          {tab === 'receitas' && (
+            <TxList
+              items={sales}
+              emptyLabel="Nenhuma receita registrada"
+              colorClass="text-nd-success"
+              prefix="+"
+              fmt={fmt}
+              onDelete={handleDelete}
+              getClientName={getClientName}
+            />
+          )}
+
+          {/* ══ DESPESAS ══ */}
+          {tab === 'despesas' && (
+            <TxList
+              items={[...expenses, ...salaries, ...advances]}
+              emptyLabel="Nenhuma despesa registrada"
+              colorClass="text-nd-danger"
+              prefix="-"
+              fmt={fmt}
+              onDelete={handleDelete}
+              getClientName={getClientName}
+            />
+          )}
+
+          {/* ══ FECHAMENTO ══ */}
+          {tab === 'fechamento' && (
+            <div className="space-y-4">
+              <div className="card p-5">
+                <h3 className="text-sm font-semibold text-nd-heading mb-4">Fechamento de Caixa — {monthLabel}</h3>
+
+                <div className="space-y-3">
+                  <ClosingRow
+                    label="Fundo de caixa inicial"
+                    value={closing?.starting_balance || 0}
+                    editable
+                    onSave={(v) => saveClosing('starting_balance', v)}
+                    fmt={fmt}
+                  />
+
+                  <div className="divider" />
+
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-sm text-nd-success font-medium">+ Faturamento do mês</span>
+                    <span className="text-sm font-bold text-nd-success">{fmt(totalRevenue)}</span>
+                  </div>
+                  <div className="pl-4 space-y-1">
+                    <MiniRow label="PIX" value={fmt(revenuePix)} />
+                    <MiniRow label="Dinheiro" value={fmt(revenueCash)} />
+                    <MiniRow label="Cartão" value={fmt(revenueCard)} />
+                    <MiniRow label="Transferência" value={fmt(revenueTransfer)} />
+                  </div>
+
+                  <div className="divider" />
+
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-sm text-nd-danger font-medium">- Gastos do mês</span>
+                    <span className="text-sm font-bold text-nd-danger">{fmt(totalExpenses)}</span>
+                  </div>
+                  <div className="pl-4 space-y-1">
+                    <MiniRow label="Dinheiro" value={fmt(expenseCash)} />
+                    <MiniRow label="Débito" value={fmt(expenseTransfer)} />
+                    <MiniRow label="PIX" value={fmt(expensePix)} />
+                    <MiniRow label="Crédito/Parcelado" value={fmt(expenseCard)} />
+                  </div>
+
+                  <div className="divider" />
+
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-sm text-nd-warning font-medium">- Salários</span>
+                    <span className="text-sm font-bold text-nd-warning">{fmt(totalSalaries)}</span>
+                  </div>
+
+                  {totalAdvances > 0 && (
+                    <>
+                      <div className="divider" />
+                      <div className="flex justify-between items-center py-1">
+                        <span className="text-sm text-nd-muted font-medium">Adiantamentos (reservado)</span>
+                        <span className="text-sm font-bold text-nd-muted">{fmt(totalAdvances)}</span>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="divider" />
+
+                  <div className="flex justify-between items-center py-2 bg-nd-surface/50 rounded-xl px-4 -mx-1">
+                    <span className="text-sm font-bold text-nd-heading">= Fundo de caixa próximo mês</span>
+                    <span className={`text-lg font-bold ${fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'}`}>
+                      {fmt(fundoCaixa)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ══ MODAL ══ */}
+      {modal !== 'closed' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setModal('closed')} />
+          <div className="relative bg-nd-card rounded-2xl border border-nd-border shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/50">
+              <h2 className="text-base font-semibold text-nd-heading">{modalTitles[modal]}</h2>
+              <button onClick={() => setModal('closed')} className="p-1.5 rounded-xl hover:bg-nd-surface transition-colors">
+                <X className="w-4 h-4 text-nd-muted" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="section-label mb-1.5 block">Descrição *</label>
+                <input type="text" value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder={modal === 'salario' ? 'Ex: Salário Março' : modal === 'adiantamento' ? 'Ex: Adiantamento turno Abril' : 'Descrição'}
+                  className="input-field" autoFocus />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="section-label mb-1.5 block">Valor (R$) *</label>
+                  <input type="number" value={form.total_amount}
+                    onChange={e => setForm(f => ({ ...f, total_amount: e.target.value }))}
+                    placeholder="0,00" step="0.01" min="0" className="input-field" />
+                </div>
+                <div>
+                  <label className="section-label mb-1.5 block">Data</label>
+                  <input type="date" value={form.transaction_date}
+                    onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))}
+                    className="input-field" />
+                </div>
+              </div>
+
+              <div>
+                <label className="section-label mb-1.5 block">Forma de pagamento</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {([
+                    { id: 'pix', label: 'PIX', icon: Smartphone },
+                    { id: 'cash', label: 'Dinheiro', icon: Banknote },
+                    { id: 'card', label: 'Cartão', icon: CreditCard },
+                    { id: 'transfer', label: 'TED', icon: ArrowRightLeft },
+                  ] as const).map(pm => (
+                    <button key={pm.id}
+                      onClick={() => setForm(f => ({ ...f, payment_method: pm.id }))}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-xs transition-all ${
+                        form.payment_method === pm.id
+                          ? 'border-nd-accent/40 bg-nd-accent/5 text-nd-accent'
+                          : 'border-nd-border text-nd-muted hover:border-nd-accent/20'
+                      }`}>
+                      <pm.icon className="w-4 h-4" />
+                      {pm.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {modal === 'despesa' && form.payment_method === 'card' && (
+                <div>
+                  <label className="section-label mb-1.5 block">Parcelas</label>
+                  <input type="number" value={form.installments}
+                    onChange={e => setForm(f => ({ ...f, installments: e.target.value }))}
+                    placeholder="1" min="1" max="24" className="input-field" />
+                  {parseInt(form.installments) > 1 && form.total_amount && (
+                    <p className="text-xs text-nd-muted mt-1">
+                      {form.installments}x de {fmt(parseFloat(form.total_amount) / parseInt(form.installments))} — parcelas futuras serão lançadas nos meses seguintes
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="section-label mb-1.5 block">Categoria</label>
+                <input type="text" value={form.category}
+                  onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                  placeholder="Ex: Material, Aluguel, Alimentação..."
+                  className="input-field" />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">Cancelar</button>
+                <button onClick={handleSave} disabled={saving || !form.description.trim() || !form.total_amount}
+                  className="btn-primary text-sm flex-1">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sub-components ──
+
+function StatCard({ label, value, color, icon: Icon, iconBg }: {
+  label: string; value: string; color: string; icon: any; iconBg: string;
+}) {
+  return (
+    <div className="card-glow p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconBg}`}>
+          <Icon className={`w-4 h-4 ${color}`} />
+        </div>
+        <span className="section-label">{label}</span>
+      </div>
+      <p className={`text-xl font-bold ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+function PayRow({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-sm text-nd-muted flex items-center gap-2">
+        <Icon className="w-3.5 h-3.5" /> {label}
+      </span>
+      <span className="text-sm font-medium text-nd-heading">{value}</span>
+    </div>
+  );
+}
+
+function MiniRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-xs text-nd-muted">• {label}</span>
+      <span className="text-xs text-nd-text">{value}</span>
+    </div>
+  );
+}
+
+function ClosingRow({ label, value, editable, onSave, fmt }: {
+  label: string; value: number; editable?: boolean; onSave?: (v: number) => void; fmt: (v: number) => string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value.toString());
+
+  if (editing && editable) {
+    return (
+      <div className="flex items-center justify-between gap-2 py-1">
+        <span className="text-sm text-nd-text">{label}</span>
+        <div className="flex items-center gap-2">
+          <input type="number" value={val} onChange={e => setVal(e.target.value)}
+            className="input-field w-32 text-right text-sm py-1" autoFocus />
+          <button onClick={() => { onSave?.(parseFloat(val) || 0); setEditing(false); }}
+            className="btn-primary text-xs px-2 py-1"><Save className="w-3 h-3" /></button>
+          <button onClick={() => setEditing(false)} className="btn-ghost text-xs px-2 py-1">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-sm text-nd-text">{label}</span>
+      <button onClick={() => editable && setEditing(true)}
+        className={`text-sm font-bold text-nd-heading ${editable ? 'hover:text-nd-accent cursor-pointer' : ''}`}>
+        {fmt(value)} {editable && <span className="text-[10px] text-nd-muted ml-1">editar</span>}
+      </button>
+    </div>
+  );
+}
+
+function TxList({ items, emptyLabel, colorClass, prefix, fmt, onDelete, getClientName }: {
+  items: TxRow[]; emptyLabel: string; colorClass: string; prefix: string;
+  fmt: (v: number) => string; onDelete: (id: string) => void; getClientName: (tx: TxRow) => string | null;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="card p-10 flex flex-col items-center justify-center text-center">
+        <DollarSign className="w-8 h-8 text-nd-muted/30 mb-3" />
+        <p className="text-sm text-nd-muted">{emptyLabel}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="card overflow-hidden">
+      <div className="divide-y divide-nd-border/50 max-h-[500px] overflow-y-auto">
+        {items.map(tx => (
+          <div key={tx.id} className="flex items-center gap-3 px-5 py-3 hover:bg-nd-surface/50 transition-colors group">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-nd-text truncate">
+                {tx.description || tx.type}
+                {tx.installment_total && tx.installment_total > 1 && (
+                  <span className="text-[10px] text-nd-muted ml-1">
+                    ({tx.installment_number}/{tx.installment_total})
+                  </span>
+                )}
+              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                {getClientName(tx) && <span className="text-xs text-nd-muted">{getClientName(tx)}</span>}
+                {tx.category && <span className="badge-muted text-[9px]">{tx.category}</span>}
+                <span className="text-xs text-nd-muted/60">
+                  {new Date(tx.transaction_date).toLocaleDateString('pt-BR')}
+                </span>
+              </div>
+            </div>
+            <span className={`text-sm font-semibold ${colorClass} shrink-0`}>
+              {prefix} {fmt(tx.total_amount)}
+            </span>
+            <button onClick={() => onDelete(tx.id)}
+              className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-nd-danger/10 text-nd-muted hover:text-nd-danger transition-all shrink-0">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
