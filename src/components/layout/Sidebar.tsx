@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useT } from '@/contexts/LanguageContext';
 import {
   CalendarDays,
   Users,
@@ -19,22 +20,23 @@ import {
   Settings,
 } from 'lucide-react';
 
-const NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Agenda', href: '/agenda', icon: CalendarDays },
-  { label: 'Clientes', href: '/clientes', icon: Users },
-  { label: 'Serviços', href: '/servicos', icon: Scissors },
-  { label: 'Financeiro', href: '/financeiro', icon: DollarSign },
-  { label: 'Equipe', href: '/profissionais', icon: UserCog },
-  { label: 'Configurações', href: '/configuracoes', icon: Settings },
-];
-
-const MOBILE_NAV = NAV_ITEMS.slice(0, 5);
-
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, salon, signOut } = useAuth();
+  const { t } = useT();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const NAV_ITEMS = [
+    { label: t.dashboard, href: '/dashboard', icon: LayoutDashboard },
+    { label: t.agenda, href: '/agenda', icon: CalendarDays },
+    { label: t.clients, href: '/clientes', icon: Users },
+    { label: t.services, href: '/servicos', icon: Scissors },
+    { label: t.financial, href: '/financeiro', icon: DollarSign },
+    { label: t.team, href: '/profissionais', icon: UserCog },
+    { label: t.settings, href: '/configuracoes', icon: Settings },
+  ];
+
+  const MOBILE_NAV = NAV_ITEMS.slice(0, 5);
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/';
@@ -60,14 +62,14 @@ export default function Sidebar() {
               Nail<span className="text-nd-accent">Dash</span>
             </h1>
             <p className="text-[10px] text-nd-muted mt-0.5">
-              {salon?.name || 'Carregando...'}
+              {salon?.name || t.loading}
             </p>
           </div>
         </div>
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          <p className="section-label px-3 mb-2">Menu</p>
+          <p className="section-label px-3 mb-2">{t.menu}</p>
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -108,7 +110,7 @@ export default function Sidebar() {
             <button
               onClick={signOut}
               className="p-1.5 rounded-lg hover:bg-nd-danger/10 text-nd-muted hover:text-nd-danger transition-colors"
-              title="Sair"
+              title={t.signOut}
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>
@@ -143,7 +145,7 @@ export default function Sidebar() {
             className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 text-nd-muted"
           >
             <Menu className="w-5 h-5" />
-            <span className="text-[9px] font-medium">Mais</span>
+            <span className="text-[9px] font-medium">{t.more}</span>
           </button>
         </div>
       </nav>
@@ -193,7 +195,7 @@ export default function Sidebar() {
                 className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-nd-danger hover:bg-nd-danger/10 transition-colors"
               >
                 <LogOut className="w-4 h-4" />
-                Sair
+                {t.signOut}
               </button>
             </div>
           </div>

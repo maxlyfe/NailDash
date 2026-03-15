@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import {
   DollarSign, TrendingUp, TrendingDown, Loader2,
@@ -44,6 +45,7 @@ type MonthlyClosing = {
 
 export default function FinanceiroPage() {
   const { salon, loading: authLoading } = useAuth();
+  const { t, locale } = useT();
   const supabase = useSupabase();
 
   const [tab, setTab] = useState<TabView>('resumo');
@@ -55,6 +57,8 @@ export default function FinanceiroPage() {
   const [modal, setModal] = useState<TxModalMode>('closed');
   const [saving, setSaving] = useState(false);
 
+  const monthNames = [t.month_0, t.month_1, t.month_2, t.month_3, t.month_4, t.month_5, t.month_6, t.month_7, t.month_8, t.month_9, t.month_10, t.month_11];
+
   // Current month navigation
   const [monthDate, setMonthDate] = useState(() => {
     const d = new Date();
@@ -64,8 +68,8 @@ export default function FinanceiroPage() {
   const monthStart = `${monthDate}-01`;
   const monthLabel = (() => {
     const [y, m] = monthDate.split('-');
-    const d = new Date(parseInt(y), parseInt(m) - 1, 1);
-    return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    const monthIdx = parseInt(m) - 1;
+    return `${monthNames[monthIdx]} ${y}`;
   })();
 
   const monthEndDate = (() => {
@@ -219,7 +223,7 @@ export default function FinanceiroPage() {
   const startingBalance = closing?.starting_balance ?? prevMonthBalance;
   const fundoCaixa = startingBalance + totalRevenue - totalExpenses;
 
-  const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const fmt = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: t.currency });
 
   // Save transaction
   const handleSave = async () => {
@@ -251,17 +255,17 @@ export default function FinanceiroPage() {
         };
 
         const { error } = await supabase.from('transactions').insert(payload);
-        if (error) { alert(`Erro: ${error.message}`); break; }
+        if (error) { alert(`${t.error}: ${error.message}`); break; }
       }
 
       setModal('closed');
       await fetchData();
-    } catch (e: any) { alert(`Erro: ${e.message}`); }
+    } catch (e: any) { alert(`${t.error}: ${e.message}`); }
     setSaving(false);
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Excluir esta transação?')) return;
+    if (!confirm(t.deleteTransactionConfirm)) return;
     await supabase.from('transactions').delete().eq('id', id);
     fetchData();
   };
@@ -325,14 +329,14 @@ export default function FinanceiroPage() {
   };
 
   const TABS: { id: TabView; label: string }[] = [
-    { id: 'resumo', label: 'Resumo' },
-    { id: 'receitas', label: 'Receitas' },
-    { id: 'despesas', label: 'Despesas' },
-    { id: 'fechamento', label: 'Fechamento' },
+    { id: 'resumo', label: t.summary },
+    { id: 'receitas', label: t.revenues },
+    { id: 'despesas', label: t.expenses },
+    { id: 'fechamento', label: t.closing },
   ];
 
   const modalTitles: Record<TxModalMode, string> = {
-    receita: 'Nova Receita', despesa: 'Nova Despesa', closed: '',
+    receita: t.newRevenue, despesa: t.newExpense, closed: '',
   };
 
   const getClientName = (tx: TxRow) => {
@@ -344,17 +348,17 @@ export default function FinanceiroPage() {
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Financeiro</h1>
-          <p className="text-nd-muted text-sm mt-1">Controle financeiro completo</p>
+          <h1 className="page-title">{t.financial}</h1>
+          <p className="text-nd-muted text-sm mt-1">{t.financialControl}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => openModal('receita')} className="btn-primary text-sm">
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Receita</span>
+            <span className="hidden sm:inline">{t.revenue}</span>
           </button>
           <button onClick={() => openModal('despesa')} className="btn-secondary text-sm">
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Despesa</span>
+            <span className="hidden sm:inline">{t.expense}</span>
           </button>
         </div>
       </div>
@@ -391,41 +395,41 @@ export default function FinanceiroPage() {
           {tab === 'resumo' && (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <StatCard label="Faturamento" value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
-                <StatCard label="Despesas" value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
-                <StatCard label="Salários" value={fmt(totalSalaries)} color="text-nd-warning" icon={UserCheck} iconBg="bg-nd-warning/10" />
-                <StatCard label="Saldo" value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
+                <StatCard label={t.billing} value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
+                <StatCard label={t.expenses} value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
+                <StatCard label={t.salaries} value={fmt(totalSalaries)} color="text-nd-warning" icon={UserCheck} iconBg="bg-nd-warning/10" />
+                <StatCard label={t.balance} value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
               </div>
 
               {/* Revenue breakdown */}
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="card p-5">
-                  <h3 className="section-label mb-3">Faturamento por forma</h3>
+                  <h3 className="section-label mb-3">{t.revenueByMethod}</h3>
                   <div className="space-y-2">
-                    <PayRow icon={Smartphone} label="PIX" value={fmt(revenuePix)} />
-                    <PayRow icon={Banknote} label="Dinheiro" value={fmt(revenueCash)} />
-                    <PayRow icon={CreditCard} label="Cartão" value={fmt(revenueCard)} />
-                    <PayRow icon={ArrowRightLeft} label="Transferência" value={fmt(revenueTransfer)} />
+                    <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(revenuePix)} />
+                    <PayRow icon={Banknote} label={t.pay_cash} value={fmt(revenueCash)} />
+                    <PayRow icon={CreditCard} label={t.pay_card} value={fmt(revenueCard)} />
+                    <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(revenueTransfer)} />
                   </div>
                   <div className="divider mt-3 pt-3">
                     <div className="flex justify-between text-sm font-semibold">
-                      <span className="text-nd-heading">Em banco (PIX+Cartão+TED)</span>
+                      <span className="text-nd-heading">{t.inBank}</span>
                       <span className="text-nd-accent">{fmt(revenuePix + revenueCard + revenueTransfer)}</span>
                     </div>
                     <div className="flex justify-between text-sm font-semibold mt-1">
-                      <span className="text-nd-heading">Em dinheiro</span>
+                      <span className="text-nd-heading">{t.inCash}</span>
                       <span className="text-nd-success">{fmt(revenueCash)}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="card p-5">
-                  <h3 className="section-label mb-3">Despesas por forma</h3>
+                  <h3 className="section-label mb-3">{t.expenseByMethod}</h3>
                   <div className="space-y-2">
-                    <PayRow icon={Smartphone} label="PIX" value={fmt(expensePix)} />
-                    <PayRow icon={Banknote} label="Dinheiro" value={fmt(expenseCash)} />
-                    <PayRow icon={CreditCard} label="Cartão" value={fmt(expenseCard)} />
-                    <PayRow icon={ArrowRightLeft} label="Transferência" value={fmt(expenseTransfer)} />
+                    <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(expensePix)} />
+                    <PayRow icon={Banknote} label={t.pay_cash} value={fmt(expenseCash)} />
+                    <PayRow icon={CreditCard} label={t.pay_card} value={fmt(expenseCard)} />
+                    <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(expenseTransfer)} />
                   </div>
                 </div>
               </div>
@@ -436,12 +440,13 @@ export default function FinanceiroPage() {
           {tab === 'receitas' && (
             <TxList
               items={sales}
-              emptyLabel="Nenhuma receita registrada"
+              emptyLabel={t.noRevenueRecorded}
               colorClass="text-nd-success"
               prefix="+"
               fmt={fmt}
               onDelete={handleDelete}
               getClientName={getClientName}
+              locale={locale}
             />
           )}
 
@@ -449,12 +454,13 @@ export default function FinanceiroPage() {
           {tab === 'despesas' && (
             <TxList
               items={expenses}
-              emptyLabel="Nenhuma despesa registrada"
+              emptyLabel={t.noExpenseRecorded}
               colorClass="text-nd-danger"
               prefix="-"
               fmt={fmt}
               onDelete={handleDelete}
               getClientName={getClientName}
+              locale={locale}
             />
           )}
 
@@ -462,24 +468,25 @@ export default function FinanceiroPage() {
           {tab === 'fechamento' && (
             <div className="space-y-4">
               <div className="card p-5">
-                <h3 className="text-sm font-semibold text-nd-heading mb-4">Fechamento de Caixa — {monthLabel}</h3>
+                <h3 className="text-sm font-semibold text-nd-heading mb-4">{t.closingTitle} — {monthLabel}</h3>
 
                 <div className="space-y-3">
                   {/* Fundo de caixa inicial */}
                   <div className="flex items-center justify-between py-2 gap-2">
-                    <span className="text-xs sm:text-sm text-nd-text font-medium">Fundo de caixa inicial</span>
+                    <span className="text-xs sm:text-sm text-nd-text font-medium">{t.startingCash}</span>
                     <div className="flex items-center gap-2">
                       <ClosingValue
                         value={startingBalance}
                         onSave={(v) => saveClosing('starting_balance', v)}
                         fmt={fmt}
+                        editLabel={t.edit}
                       />
                       <button
                         onClick={autoFillStartingBalance}
                         className="text-[10px] text-nd-accent hover:underline shrink-0"
-                        title="Auto-preencher com o saldo do mês anterior"
+                        title={t.autoFillPrevMonth}
                       >
-                        auto
+                        {t.auto}
                       </button>
                     </div>
                   </div>
@@ -488,35 +495,35 @@ export default function FinanceiroPage() {
 
                   {/* Faturamento */}
                   <div className="flex justify-between items-center py-1">
-                    <span className="text-sm text-nd-success font-medium">+ Faturamento do mês</span>
+                    <span className="text-sm text-nd-success font-medium">+ {t.monthlyBilling}</span>
                     <span className="text-sm font-bold text-nd-success">{fmt(totalRevenue)}</span>
                   </div>
                   <div className="pl-4 space-y-1">
-                    <MiniRow label="PIX" value={fmt(revenuePix)} />
-                    <MiniRow label="Dinheiro" value={fmt(revenueCash)} />
-                    <MiniRow label="Cartão" value={fmt(revenueCard)} />
-                    <MiniRow label="Transferência" value={fmt(revenueTransfer)} />
+                    <MiniRow label={t.pay_pix} value={fmt(revenuePix)} />
+                    <MiniRow label={t.pay_cash} value={fmt(revenueCash)} />
+                    <MiniRow label={t.pay_card} value={fmt(revenueCard)} />
+                    <MiniRow label={t.pay_transfer} value={fmt(revenueTransfer)} />
                   </div>
 
                   <div className="divider" />
 
                   {/* Despesas */}
                   <div className="flex justify-between items-center py-1">
-                    <span className="text-sm text-nd-danger font-medium">- Despesas do mês</span>
+                    <span className="text-sm text-nd-danger font-medium">- {t.monthlyExpenses}</span>
                     <span className="text-sm font-bold text-nd-danger">{fmt(totalExpenses)}</span>
                   </div>
                   <div className="pl-4 space-y-1">
-                    <MiniRow label="PIX" value={fmt(expensePix)} />
-                    <MiniRow label="Dinheiro" value={fmt(expenseCash)} />
-                    <MiniRow label="Cartão" value={fmt(expenseCard)} />
-                    <MiniRow label="Transferência" value={fmt(expenseTransfer)} />
+                    <MiniRow label={t.pay_pix} value={fmt(expensePix)} />
+                    <MiniRow label={t.pay_cash} value={fmt(expenseCash)} />
+                    <MiniRow label={t.pay_card} value={fmt(expenseCard)} />
+                    <MiniRow label={t.pay_transfer} value={fmt(expenseTransfer)} />
                   </div>
 
                   <div className="divider" />
 
                   {/* Resultado */}
                   <div className="flex justify-between items-center py-2 bg-nd-surface/50 rounded-xl px-4 -mx-1">
-                    <span className="text-sm font-bold text-nd-heading">= Saldo do mês</span>
+                    <span className="text-sm font-bold text-nd-heading">= {t.monthlyBalance}</span>
                     <span className={`text-lg font-bold ${fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'}`}>
                       {fmt(fundoCaixa)}
                     </span>
@@ -530,10 +537,9 @@ export default function FinanceiroPage() {
                         <div className="flex items-start gap-2">
                           <AlertTriangle className="w-4 h-4 text-nd-warning shrink-0 mt-0.5" />
                           <div>
-                            <p className="text-sm font-semibold text-nd-heading">Adiantamentos do próximo mês</p>
+                            <p className="text-sm font-semibold text-nd-heading">{t.nextMonthAdvances}</p>
                             <p className="text-[11px] text-nd-muted mt-0.5">
-                              Dinheiro recebido este mês como sinal/garantia de turnos futuros.
-                              Está fisicamente na conta mas pertence ao mês seguinte.
+                              {t.advancesDescription}
                             </p>
                           </div>
                         </div>
@@ -546,34 +552,34 @@ export default function FinanceiroPage() {
                           ))}
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t border-nd-warning/15">
-                          <span className="text-sm font-semibold text-nd-warning">Total adiantamentos</span>
+                          <span className="text-sm font-semibold text-nd-warning">{t.totalAdvances}</span>
                           <span className="text-sm font-bold text-nd-warning">{fmt(totalNextAdvances)}</span>
                         </div>
                         <div className="pl-6 space-y-1">
-                          {nextAdvPix > 0 && <MiniRow label="PIX" value={fmt(nextAdvPix)} />}
-                          {nextAdvCash > 0 && <MiniRow label="Dinheiro" value={fmt(nextAdvCash)} />}
-                          {nextAdvCard > 0 && <MiniRow label="Cartão" value={fmt(nextAdvCard)} />}
-                          {nextAdvTransfer > 0 && <MiniRow label="Transferência" value={fmt(nextAdvTransfer)} />}
+                          {nextAdvPix > 0 && <MiniRow label={t.pay_pix} value={fmt(nextAdvPix)} />}
+                          {nextAdvCash > 0 && <MiniRow label={t.pay_cash} value={fmt(nextAdvCash)} />}
+                          {nextAdvCard > 0 && <MiniRow label={t.pay_card} value={fmt(nextAdvCard)} />}
+                          {nextAdvTransfer > 0 && <MiniRow label={t.pay_transfer} value={fmt(nextAdvTransfer)} />}
                         </div>
                       </div>
 
                       {/* Reconciliation */}
                       <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 space-y-2">
-                        <p className="text-xs font-semibold text-blue-800">Conciliação bancária</p>
+                        <p className="text-xs font-semibold text-blue-800">{t.bankReconciliation}</p>
                         <div className="flex justify-between text-sm">
-                          <span className="text-blue-700">Saldo do mês</span>
+                          <span className="text-blue-700">{t.monthlyBalance}</span>
                           <span className="text-blue-800 font-semibold">{fmt(fundoCaixa)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-blue-700">+ Adiantamentos futuros na conta</span>
+                          <span className="text-blue-700">{t.futureAdvancesInAccount}</span>
                           <span className="text-blue-800 font-semibold">{fmt(totalNextAdvances)}</span>
                         </div>
                         <div className="flex justify-between text-sm font-bold border-t border-blue-200 pt-2">
-                          <span className="text-blue-900">Valor real na conta/caixa</span>
+                          <span className="text-blue-900">{t.realAccountValue}</span>
                           <span className="text-blue-900">{fmt(fundoCaixa + totalNextAdvances)}</span>
                         </div>
                         <p className="text-[10px] text-blue-600 mt-1">
-                          Este valor deve bater com o saldo bancário + dinheiro físico.
+                          {t.reconciliationNote}
                         </p>
                       </div>
                     </>
@@ -598,22 +604,22 @@ export default function FinanceiroPage() {
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="section-label mb-1.5 block">Descrição *</label>
+                <label className="section-label mb-1.5 block">{t.description} *</label>
                 <input type="text" value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder="Descrição"
+                  placeholder={t.description}
                   className="input-field" autoFocus />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="section-label mb-1.5 block">Valor (R$) *</label>
+                  <label className="section-label mb-1.5 block">{t.amount} ({t.currencySymbol}) *</label>
                   <input type="number" value={form.total_amount}
                     onChange={e => setForm(f => ({ ...f, total_amount: e.target.value }))}
                     placeholder="0,00" step="0.01" min="0" className="input-field" />
                 </div>
                 <div>
-                  <label className="section-label mb-1.5 block">Data</label>
+                  <label className="section-label mb-1.5 block">{t.date}</label>
                   <input type="date" value={form.transaction_date}
                     onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))}
                     className="input-field" />
@@ -621,13 +627,13 @@ export default function FinanceiroPage() {
               </div>
 
               <div>
-                <label className="section-label mb-1.5 block">Forma de pagamento</label>
+                <label className="section-label mb-1.5 block">{t.paymentMethod}</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {([
-                    { id: 'pix', label: 'PIX', icon: Smartphone },
-                    { id: 'cash', label: 'Dinheiro', icon: Banknote },
-                    { id: 'card', label: 'Cartão', icon: CreditCard },
-                    { id: 'transfer', label: 'TED', icon: ArrowRightLeft },
+                    { id: 'pix', label: t.pay_pix, icon: Smartphone },
+                    { id: 'cash', label: t.pay_cash, icon: Banknote },
+                    { id: 'card', label: t.pay_card, icon: CreditCard },
+                    { id: 'transfer', label: t.pay_transfer, icon: ArrowRightLeft },
                   ] as const).map(pm => (
                     <button key={pm.id}
                       onClick={() => setForm(f => ({ ...f, payment_method: pm.id }))}
@@ -645,32 +651,32 @@ export default function FinanceiroPage() {
 
               {modal === 'despesa' && form.payment_method === 'card' && (
                 <div>
-                  <label className="section-label mb-1.5 block">Parcelas</label>
+                  <label className="section-label mb-1.5 block">{t.installments}</label>
                   <input type="number" value={form.installments}
                     onChange={e => setForm(f => ({ ...f, installments: e.target.value }))}
                     placeholder="1" min="1" max="24" className="input-field" />
                   {parseInt(form.installments) > 1 && form.total_amount && (
                     <p className="text-xs text-nd-muted mt-1">
-                      {form.installments}x de {fmt(parseFloat(form.total_amount) / parseInt(form.installments))} — parcelas futuras serão lançadas nos meses seguintes
+                      {form.installments}x {fmt(parseFloat(form.total_amount) / parseInt(form.installments))} — {t.installmentsFutureNote}
                     </p>
                   )}
                 </div>
               )}
 
               <div>
-                <label className="section-label mb-1.5 block">Categoria</label>
+                <label className="section-label mb-1.5 block">{t.category}</label>
                 <input type="text" value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  placeholder="Ex: Material, Aluguel, Salário..."
+                  placeholder={t.categoryPlaceholder}
                   className="input-field" />
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">Cancelar</button>
+                <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">{t.cancel}</button>
                 <button onClick={handleSave} disabled={saving || !form.description.trim() || !form.total_amount}
                   className="btn-primary text-sm flex-1">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Salvar
+                  {t.save}
                 </button>
               </div>
             </div>
@@ -719,8 +725,8 @@ function MiniRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ClosingValue({ value, onSave, fmt }: {
-  value: number; onSave: (v: number) => void; fmt: (v: number) => string;
+function ClosingValue({ value, onSave, fmt, editLabel }: {
+  value: number; onSave: (v: number) => void; fmt: (v: number) => string; editLabel: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value.toString());
@@ -744,14 +750,14 @@ function ClosingValue({ value, onSave, fmt }: {
   return (
     <button onClick={() => { setVal(value.toString()); setEditing(true); }}
       className="text-sm font-bold text-nd-heading hover:text-nd-accent cursor-pointer">
-      {fmt(value)} <span className="text-[10px] text-nd-muted ml-1">editar</span>
+      {fmt(value)} <span className="text-[10px] text-nd-muted ml-1">{editLabel}</span>
     </button>
   );
 }
 
-function TxList({ items, emptyLabel, colorClass, prefix, fmt, onDelete, getClientName }: {
+function TxList({ items, emptyLabel, colorClass, prefix, fmt, onDelete, getClientName, locale }: {
   items: TxRow[]; emptyLabel: string; colorClass: string; prefix: string;
-  fmt: (v: number) => string; onDelete: (id: string) => void; getClientName: (tx: TxRow) => string | null;
+  fmt: (v: number) => string; onDelete: (id: string) => void; getClientName: (tx: TxRow) => string | null; locale: string;
 }) {
   if (items.length === 0) {
     return (
@@ -779,7 +785,7 @@ function TxList({ items, emptyLabel, colorClass, prefix, fmt, onDelete, getClien
                 {getClientName(tx) && <span className="text-[10px] sm:text-xs text-nd-muted">{getClientName(tx)}</span>}
                 {tx.category && <span className="badge-muted text-[9px]">{tx.category}</span>}
                 <span className="text-[10px] sm:text-xs text-nd-muted/60">
-                  {new Date(tx.transaction_date).toLocaleDateString('pt-BR')}
+                  {new Date(tx.transaction_date).toLocaleDateString(locale)}
                 </span>
               </div>
             </div>

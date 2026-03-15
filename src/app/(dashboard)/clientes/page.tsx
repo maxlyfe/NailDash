@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import type { Client } from '@/lib/types';
 import {
@@ -13,6 +14,7 @@ type ModalMode = 'closed' | 'create' | 'edit' | 'view';
 
 export default function ClientesPage() {
   const { salon } = useAuth();
+  const { t, locale } = useT();
   const supabase = useSupabase();
 
   const [clients, setClients] = useState<Client[]>([]);
@@ -95,30 +97,30 @@ export default function ClientesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Excluir este cliente?')) return;
+    if (!confirm(t.deleteClientConfirm)) return;
     await supabase.from('clients').delete().eq('id', id);
     setModal('closed');
     fetchClients();
   };
 
   const formatCurrency = (v: number) =>
-    v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    v.toLocaleString(locale, { style: 'currency', currency: t.currency });
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Clientes</h1>
+          <h1 className="page-title">{t.clients}</h1>
           <p className="text-nd-muted text-sm mt-1">
             {clients.length > 0
-              ? `${clients.length} cliente${clients.length !== 1 ? 's' : ''} cadastrado${clients.length !== 1 ? 's' : ''}`
-              : 'Base de clientes do salão'}
+              ? `${clients.length} ${t.clientsRegistered}`
+              : t.clientDatabase}
           </p>
         </div>
         <button onClick={openCreate} className="btn-primary text-sm">
           <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Novo</span>
+          <span className="hidden sm:inline">{t.newShort}</span>
         </button>
       </div>
 
@@ -130,7 +132,7 @@ export default function ClientesPage() {
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por nome, telefone ou email..."
+            placeholder={t.searchClientsPlaceholder}
             className="input-field pl-10"
           />
           {search && (
@@ -155,10 +157,10 @@ export default function ClientesPage() {
           <div className="w-16 h-16 rounded-2xl bg-nd-surface flex items-center justify-center mb-5">
             <Users className="w-8 h-8 text-nd-muted/30" />
           </div>
-          <p className="text-sm font-semibold text-nd-text">Nenhum cliente cadastrado</p>
-          <p className="text-sm text-nd-muted mt-2">Importe via CSV ou cadastre manualmente.</p>
+          <p className="text-sm font-semibold text-nd-text">{t.noClientsYet}</p>
+          <p className="text-sm text-nd-muted mt-2">{t.importCsvOrManual}</p>
           <button onClick={openCreate} className="btn-primary mt-5 text-sm">
-            <Plus className="w-4 h-4" /> Cadastrar
+            <Plus className="w-4 h-4" /> {t.register}
           </button>
         </div>
       )}
@@ -195,7 +197,7 @@ export default function ClientesPage() {
                 </div>
                 <div className="text-right shrink-0 hidden sm:block">
                   <p className="text-sm font-semibold text-nd-heading">{formatCurrency(client.total_spent)}</p>
-                  <p className="text-xs text-nd-muted">{client.visit_count} visita{client.visit_count !== 1 ? 's' : ''}</p>
+                  <p className="text-xs text-nd-muted">{client.visit_count} {t.visits.toLowerCase()}</p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-nd-muted/30 shrink-0" />
               </button>
@@ -207,7 +209,7 @@ export default function ClientesPage() {
       {/* No results */}
       {!loading && clients.length > 0 && filtered.length === 0 && (
         <div className="card p-8 text-center">
-          <p className="text-sm text-nd-muted">Nenhum resultado para &quot;{search}&quot;</p>
+          <p className="text-sm text-nd-muted">{t.noResultsFor} &quot;{search}&quot;</p>
         </div>
       )}
 
@@ -219,7 +221,7 @@ export default function ClientesPage() {
             {/* Modal header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/50">
               <h2 className="text-base font-semibold text-nd-heading">
-                {modal === 'create' ? 'Novo Cliente' : modal === 'edit' ? 'Editar Cliente' : selected?.name}
+                {modal === 'create' ? t.newClient : modal === 'edit' ? t.editClient : selected?.name}
               </h2>
               <button onClick={() => setModal('closed')}
                 className="p-1.5 rounded-xl hover:bg-nd-surface transition-colors">
@@ -240,7 +242,7 @@ export default function ClientesPage() {
                     <h3 className="text-lg font-semibold text-nd-heading">{selected.name}</h3>
                     {selected.last_visit_at && (
                       <p className="text-xs text-nd-muted mt-0.5">
-                        Última visita: {new Date(selected.last_visit_at).toLocaleDateString('pt-BR')}
+                        {t.lastVisit} {new Date(selected.last_visit_at).toLocaleDateString(locale)}
                       </p>
                     )}
                   </div>
@@ -249,17 +251,17 @@ export default function ClientesPage() {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="card-glow p-3 text-center">
                     <p className="text-lg font-bold text-nd-heading">{selected.visit_count}</p>
-                    <p className="text-[10px] text-nd-muted uppercase">Visitas</p>
+                    <p className="text-[10px] text-nd-muted uppercase">{t.visits}</p>
                   </div>
                   <div className="card-glow p-3 text-center">
                     <p className="text-lg font-bold text-nd-heading">{formatCurrency(selected.total_spent)}</p>
-                    <p className="text-[10px] text-nd-muted uppercase">Total</p>
+                    <p className="text-[10px] text-nd-muted uppercase">{t.total}</p>
                   </div>
                   <div className="card-glow p-3 text-center">
                     <p className="text-lg font-bold text-nd-heading flex items-center justify-center gap-1">
                       <Star className="w-3.5 h-3.5 text-nd-warning" /> {selected.loyalty_points}
                     </p>
-                    <p className="text-[10px] text-nd-muted uppercase">Pontos</p>
+                    <p className="text-[10px] text-nd-muted uppercase">{t.points}</p>
                   </div>
                 </div>
 
@@ -288,7 +290,7 @@ export default function ClientesPage() {
 
                 <div className="flex gap-3">
                   <button onClick={() => openEdit(selected)} className="btn-secondary text-sm flex-1">
-                    <Edit3 className="w-4 h-4" /> Editar
+                    <Edit3 className="w-4 h-4" /> {t.edit}
                   </button>
                   <button onClick={() => handleDelete(selected.id)} className="btn-danger text-sm">
                     <Trash2 className="w-4 h-4" />
@@ -301,44 +303,44 @@ export default function ClientesPage() {
             {(modal === 'create' || modal === 'edit') && (
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="section-label mb-1.5 block">Nome *</label>
+                  <label className="section-label mb-1.5 block">{t.name} *</label>
                   <input
                     type="text" value={form.name}
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                    placeholder="Nome do cliente"
+                    placeholder={t.clientNamePlaceholder}
                     className="input-field" autoFocus
                   />
                 </div>
                 <div>
-                  <label className="section-label mb-1.5 block">Telefone</label>
+                  <label className="section-label mb-1.5 block">{t.phone}</label>
                   <input
                     type="tel" value={form.phone}
                     onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                    placeholder="(11) 99999-9999"
+                    placeholder={t.phonePlaceholder}
                     className="input-field"
                   />
                 </div>
                 <div>
-                  <label className="section-label mb-1.5 block">Email</label>
+                  <label className="section-label mb-1.5 block">{t.email}</label>
                   <input
                     type="email" value={form.email}
                     onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                    placeholder="email@exemplo.com"
+                    placeholder={t.emailPlaceholder}
                     className="input-field"
                   />
                 </div>
                 <div>
-                  <label className="section-label mb-1.5 block">Observações</label>
+                  <label className="section-label mb-1.5 block">{t.notes}</label>
                   <textarea
                     value={form.notes}
                     onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                    placeholder="Preferências, alergias, etc..."
+                    placeholder={t.notesTip}
                     className="input-field resize-none h-20"
                   />
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">
-                    Cancelar
+                    {t.cancel}
                   </button>
                   <button
                     onClick={handleSave}
@@ -346,7 +348,7 @@ export default function ClientesPage() {
                     className="btn-primary text-sm flex-1"
                   >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {modal === 'create' ? 'Cadastrar' : 'Salvar'}
+                    {modal === 'create' ? t.register : t.save}
                   </button>
                 </div>
               </div>

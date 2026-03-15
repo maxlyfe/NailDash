@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useT } from '@/contexts/LanguageContext';
 import { Loader2, Sparkles } from 'lucide-react';
 
 export default function LoginPage() {
@@ -17,13 +18,14 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  const { t } = useT();
 
   useEffect(() => {
     const errorParam = searchParams.get('error');
     if (errorParam) {
-      setError('Falha na autenticação. Tente novamente.');
+      setError(t.authFailed);
     }
-  }, [searchParams]);
+  }, [searchParams, t.authFailed]);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -48,14 +50,14 @@ function LoginContent() {
 
       if (error) {
         console.error('OAuth error:', error);
-        setError('Falha ao conectar com Google: ' + error.message);
+        setError(t.authFailed);
         setLoading(false);
       } else {
         console.log('OAuth redirect URL:', data?.url);
       }
     } catch (err) {
       console.error('Unexpected error:', err);
-      setError('Erro inesperado. Tente novamente.');
+      setError(t.authFailed);
       setLoading(false);
     }
   };
@@ -86,7 +88,7 @@ function LoginContent() {
             Nail<span className="text-nd-accent">Dash</span>
           </h1>
           <p className="text-nd-muted text-sm mt-2">
-            Gestão inteligente para o seu salão
+            {t.tagline}
           </p>
         </div>
 
@@ -95,10 +97,10 @@ function LoginContent() {
           <div className="space-y-5">
             <div>
               <h2 className="font-display font-semibold text-nd-heading text-lg">
-                Bem-vinda de volta
+                {t.welcomeBack}
               </h2>
               <p className="text-nd-muted text-sm mt-1">
-                Entre na sua conta para continuar
+                {t.signInSubtitle}
               </p>
             </div>
 
@@ -123,13 +125,13 @@ function LoginContent() {
                   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#D4756A"/>
                 </svg>
               )}
-              {loading ? 'Conectando...' : 'Continuar com Google'}
+              {loading ? t.connecting : t.continueWithGoogle}
             </button>
 
             {/* Divider */}
             <div className="flex items-center gap-3">
               <div className="flex-1 h-px bg-nd-border/60" />
-              <span className="text-[11px] text-nd-muted/60">ou</span>
+              <span className="text-[11px] text-nd-muted/60">{t.or}</span>
               <div className="flex-1 h-px bg-nd-border/60" />
             </div>
 
@@ -142,8 +144,8 @@ function LoginContent() {
                 disabled
               />
               <button className="btn-secondary w-full opacity-50 cursor-not-allowed" disabled>
-                Entrar com Email
-                <span className="badge-muted ml-2 text-[9px]">Em breve</span>
+                {t.signInWithEmail}
+                <span className="badge-muted ml-2 text-[9px]">{t.comingSoon}</span>
               </button>
             </div>
 

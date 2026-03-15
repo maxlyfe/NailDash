@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import {
   CalendarDays, Plus, X, Loader2, Save, Trash2,
@@ -47,20 +48,6 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-nd-danger/10 border-nd-danger/20 text-nd-danger line-through',
   no_show: 'bg-nd-muted/10 border-nd-muted/20 text-nd-muted',
 };
-
-const STATUS_LABELS: Record<string, string> = {
-  scheduled: 'Agendado', confirmed: 'Confirmado', in_progress: 'Em andamento',
-  completed: 'Concluído', cancelled: 'Cancelado', no_show: 'Não compareceu',
-};
-
-const PAYMENT_METHODS = [
-  { value: 'pix', label: 'PIX', icon: Banknote },
-  { value: 'cash', label: 'Dinheiro', icon: DollarSign },
-  { value: 'card', label: 'Cartão', icon: CreditCard },
-  { value: 'transfer', label: 'Transferência', icon: ArrowDownLeft },
-];
-
-const DAY_NAMES_SHORT = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
 const DEFAULT_BH: BusinessHours = {
   '0': null,
@@ -108,9 +95,24 @@ function toLocalInput(isoStr: string): string {
 /* ─── Component ─── */
 export default function AgendaPage() {
   const { salon, user, loading: authLoading } = useAuth();
+  const { t, locale } = useT();
   const supabase = useSupabase();
 
   const bh: BusinessHours = (salon?.business_hours as BusinessHours) || DEFAULT_BH;
+
+  const STATUS_LABELS: Record<string, string> = {
+    scheduled: t.status_scheduled, confirmed: t.status_confirmed, in_progress: t.status_in_progress,
+    completed: t.status_completed, cancelled: t.status_cancelled, no_show: 'No show',
+  };
+
+  const PAYMENT_METHODS = [
+    { value: 'pix', label: t.pay_pix, icon: Banknote },
+    { value: 'cash', label: t.pay_cash, icon: DollarSign },
+    { value: 'card', label: t.pay_card, icon: CreditCard },
+    { value: 'transfer', label: t.pay_transfer, icon: ArrowDownLeft },
+  ];
+
+  const DAY_NAMES_SHORT = [t.dayShort_sun, t.dayShort_mon, t.dayShort_tue, t.dayShort_wed, t.dayShort_thu, t.dayShort_fri, t.dayShort_sat];
 
   // Earliest business hour for auto-scroll
   const scrollToHour = useMemo(() => {
@@ -272,7 +274,7 @@ export default function AgendaPage() {
   const getApptDisplayName = (appt: ApptRow) => {
     if (appt.client_id && clientMap[appt.client_id]) return clientMap[appt.client_id];
     if (appt.client_name) return appt.client_name;
-    return 'Cliente';
+    return t.client;
   };
 
   // Auto-calculate end time based on selected services
@@ -444,7 +446,7 @@ export default function AgendaPage() {
           appointment_id: newAppt.id,
           client_id: form.client_id || null,
           professional_id: form.professional_id,
-          description: `Adiantamento: ${form.client_name.trim() || 'Cliente'}`,
+          description: `Adiantamento: ${form.client_name.trim() || t.client}`,
           total_amount: advanceAmt,
           service_price: 0, discount: 0, tax: 0, tips: 0,
           category: 'adiantamento',
@@ -583,7 +585,7 @@ export default function AgendaPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Excluir este agendamento?')) return;
+    if (!confirm(t.deleteAppointmentConfirm)) return;
     await supabase.from('appointment_services').delete().eq('appointment_id', id);
     await supabase.from('appointments').delete().eq('id', id);
     setModal('closed');
@@ -636,15 +638,15 @@ export default function AgendaPage() {
     return sum + (svc?.price || 0);
   }, 0);
 
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const formatCurrency = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: t.currency });
+  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 
   const isCurrentWeek = isSameDay(weekDays[0], getWeekDays(new Date())[0]);
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => i);
 
   const headerLabel = viewMode === 'week'
-    ? `${weekStart.getDate()} – ${weekEnd.getDate()} de ${weekEnd.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`
-    : currentDate.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+    ? `${weekStart.getDate()} – ${weekEnd.getDate()} de ${weekEnd.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`
+    : currentDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' });
 
   // Scroll to business hours start on mount
   const gridRef = useRef<HTMLDivElement>(null);
@@ -660,11 +662,11 @@ export default function AgendaPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-2 shrink-0">
         <div className="min-w-0">
-          <h1 className="page-title">Agenda</h1>
+          <h1 className="page-title">{t.agenda}</h1>
         </div>
         <button onClick={() => openCreateAt(currentDate, new Date().getHours())} className="btn-primary text-sm shrink-0">
           <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Novo</span>
+          <span className="hidden sm:inline">{t.add}</span>
         </button>
       </div>
 
@@ -674,7 +676,7 @@ export default function AgendaPage() {
           <button onClick={() => navigate(-1)} className="btn-ghost p-2">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <button onClick={() => setCurrentDate(new Date())} className="btn-ghost text-xs px-3 py-1.5">Hoje</button>
+          <button onClick={() => setCurrentDate(new Date())} className="btn-ghost text-xs px-3 py-1.5">{t.today}</button>
           <button onClick={() => navigate(1)} className="btn-ghost p-2">
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -683,11 +685,11 @@ export default function AgendaPage() {
         <div className="flex gap-1 bg-nd-surface rounded-xl p-0.5">
           <button onClick={() => setViewMode('week')}
             className={`text-xs px-3 py-1.5 rounded-lg transition-all ${viewMode === 'week' ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
-            Semana
+            {t.weekView}
           </button>
           <button onClick={() => setViewMode('day')}
             className={`text-xs px-3 py-1.5 rounded-lg transition-all ${viewMode === 'day' ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
-            Dia
+            {t.dayView}
           </button>
         </div>
       </div>
@@ -719,7 +721,7 @@ export default function AgendaPage() {
                   <p className={`text-lg font-bold ${isToday ? 'text-nd-accent' : 'text-nd-heading'}`}>
                     {day.getDate()}
                   </p>
-                  {isClosed && <span className="text-[9px] text-nd-muted/50 italic">Fechado</span>}
+                  {isClosed && <span className="text-[9px] text-nd-muted/50 italic">{t.closedDay}</span>}
                   {!isClosed && dayApptCount > 0 && (
                     <span className="text-[9px] text-nd-accent font-medium">{dayApptCount} turno{dayApptCount > 1 ? 's' : ''}</span>
                   )}
@@ -880,13 +882,13 @@ export default function AgendaPage() {
                       <div className="flex gap-2 mt-2">
                         {appt.status === 'scheduled' && (
                           <button onClick={(e) => { e.stopPropagation(); openConfirmAdvance(appt); }}
-                            className="text-[11px] font-medium text-blue-600 hover:underline">Confirmar</button>
+                            className="text-[11px] font-medium text-blue-600 hover:underline">{t.confirm}</button>
                         )}
                         {appt.advance_amount > 0 && !isClosed && (
-                          <span className="text-[10px] text-nd-accent">Sinal: {formatCurrency(appt.advance_amount)}</span>
+                          <span className="text-[10px] text-nd-accent">{t.deposit}: {formatCurrency(appt.advance_amount)}</span>
                         )}
                         <button onClick={(e) => { e.stopPropagation(); openCloseShift(appt); }}
-                          className="text-[11px] font-medium text-nd-success hover:underline">Fechar Turno</button>
+                          className="text-[11px] font-medium text-nd-success hover:underline">{t.closeShift}</button>
                       </div>
                     )}
                   </div>
@@ -900,7 +902,7 @@ export default function AgendaPage() {
       {/* ════ CREATE/EDIT MODAL ════ */}
       {(modal === 'create' || modal === 'edit') && (() => {
         const formDate = form.starts_at ? new Date(form.starts_at) : new Date();
-        const formDateLabel = formDate.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric', weekday: 'long' });
+        const formDateLabel = formDate.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', weekday: 'long' });
         const totalDuration = form.service_ids.reduce((sum, id) => {
           const svc = services.find(s => s.id === id);
           return sum + (svc?.duration_minutes || 0);
@@ -915,7 +917,7 @@ export default function AgendaPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/30 shrink-0">
               <h2 className="text-base font-semibold text-nd-heading">
-                {modal === 'create' ? 'Novo Agendamento' : 'Editar Agendamento'}
+                {modal === 'create' ? t.newAppointment : t.editAppointment}
               </h2>
               <button onClick={() => setModal('closed')}
                 className="p-1.5 rounded-xl hover:bg-nd-surface transition-colors">
@@ -934,7 +936,7 @@ export default function AgendaPage() {
                       value={clientSearch}
                       onChange={e => handleClientSearchChange(e.target.value)}
                       onFocus={() => setShowClientDropdown(true)}
-                      placeholder="Buscar cliente..."
+                      placeholder={t.search}
                       className="input-field !pl-9 !bg-nd-surface/50"
                       autoFocus
                     />
@@ -950,7 +952,7 @@ export default function AgendaPage() {
                   <div className="mt-2 bg-white rounded-xl border border-nd-border/50 shadow-sm max-h-52 overflow-y-auto">
                     {filteredClients.length === 0 ? (
                       <p className="px-3 py-3 text-xs text-nd-muted text-center">
-                        {clientSearch.trim() ? `Nenhum encontrado` : 'Nenhum cliente cadastrado'}
+                        {clientSearch.trim() ? t.noneFound : t.noClientsRegistered}
                       </p>
                     ) : (
                       filteredClients.map(c => (
@@ -982,7 +984,7 @@ export default function AgendaPage() {
                   {/* Time + Services row */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Hora de início</label>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.startTime}</label>
                       <input type="datetime-local" value={form.starts_at}
                         onChange={e => {
                           const newStart = e.target.value;
@@ -991,7 +993,7 @@ export default function AgendaPage() {
                         className="input-field !bg-nd-surface/30 text-sm" />
                     </div>
                     <div>
-                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Profissional</label>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.professional}</label>
                       <select value={form.professional_id}
                         onChange={e => setForm(f => ({ ...f, professional_id: e.target.value }))}
                         className="input-field !bg-nd-surface/30 text-sm">
@@ -1004,14 +1006,14 @@ export default function AgendaPage() {
                   {/* Services */}
                   {services.length > 0 && (
                     <div>
-                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Serviços</label>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.services}</label>
                       <div className="relative mb-2">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-nd-muted" />
                         <input
                           type="text"
                           value={serviceSearch}
                           onChange={e => setServiceSearch(e.target.value)}
-                          placeholder="Buscar serviço..."
+                          placeholder={t.search}
                           className="input-field !pl-8 !py-2 text-sm !bg-nd-surface/30"
                         />
                       </div>
@@ -1028,7 +1030,7 @@ export default function AgendaPage() {
                           </label>
                         ))}
                         {filteredServices.length === 0 && (
-                          <p className="text-xs text-nd-muted text-center py-2">Nenhum serviço encontrado</p>
+                          <p className="text-xs text-nd-muted text-center py-2">{t.noServicesFound}</p>
                         )}
                       </div>
                     </div>
@@ -1037,13 +1039,13 @@ export default function AgendaPage() {
                   {/* Duration + End time + Total */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Término</label>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.endTime}</label>
                       <input type="datetime-local" value={form.ends_at}
                         onChange={e => setForm(f => ({ ...f, ends_at: e.target.value }))}
                         className="input-field !bg-nd-surface/30 text-sm" />
                     </div>
                     <div>
-                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Duração</label>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.duration}</label>
                       <div className="flex items-center gap-2 h-[42px] px-3 rounded-xl bg-nd-surface/30 border border-nd-border/20 text-sm text-nd-muted">
                         <Clock className="w-4 h-4" />
                         <span>{totalDuration} min</span>
@@ -1051,7 +1053,7 @@ export default function AgendaPage() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-nd-accent/5 border border-nd-accent/15">
-                    <span className="text-sm font-medium text-nd-heading">Total</span>
+                    <span className="text-sm font-medium text-nd-heading">{t.total}</span>
                     <span className="text-lg font-bold text-nd-accent">
                       {formatCurrency(selectedServicesTotal)}
                     </span>
@@ -1060,19 +1062,19 @@ export default function AgendaPage() {
                   {/* ── Depósito / Adiantamento ── */}
                   <div className="border-t border-nd-border/20 pt-4">
                     <div className="flex items-center justify-between mb-3">
-                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium">Depósito / Sinal</label>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium">{t.deposit}</label>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-[11px] text-nd-muted mb-1 block">Valor (R$)</label>
+                        <label className="text-[11px] text-nd-muted mb-1 block">{t.paidAmount} ({t.currencySymbol})</label>
                         <input type="number" value={form.advance_amount}
                           onChange={e => setForm(f => ({ ...f, advance_amount: e.target.value }))}
                           min="0" step="0.01" placeholder="0,00"
                           className="input-field !bg-nd-surface/30 text-sm font-semibold" />
                       </div>
                       <div>
-                        <label className="text-[11px] text-nd-muted mb-1 block">Método de pagamento</label>
+                        <label className="text-[11px] text-nd-muted mb-1 block">{t.paymentMethod}</label>
                         <select value={form.advance_payment_method}
                           onChange={e => setForm(f => ({ ...f, advance_payment_method: e.target.value }))}
                           className="input-field !bg-nd-surface/30 text-sm"
@@ -1086,7 +1088,7 @@ export default function AgendaPage() {
                     </div>
                     {hasAdvance && (
                       <p className="text-[10px] text-nd-accent mt-1.5">
-                        Sinal de {formatCurrency(advAmt)} será registrado como garantia
+                        {t.deposit} {formatCurrency(advAmt)}
                       </p>
                     )}
                   </div>
@@ -1096,23 +1098,23 @@ export default function AgendaPage() {
                     <div className="border-t border-nd-border/20 pt-4">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Status</label>
+                          <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.status}</label>
                           <select value={form.status}
                             onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                             className="input-field !bg-nd-surface/30 text-sm">
-                            <option value="scheduled">Agendado</option>
-                            <option value="confirmed">Confirmado</option>
-                            <option value="in_progress">Em andamento</option>
-                            <option value="completed">Concluído</option>
-                            <option value="cancelled">Cancelado</option>
-                            <option value="no_show">Não compareceu</option>
+                            <option value="scheduled">{t.status_scheduled}</option>
+                            <option value="confirmed">{t.status_confirmed}</option>
+                            <option value="in_progress">{t.status_in_progress}</option>
+                            <option value="completed">{t.status_completed}</option>
+                            <option value="cancelled">{t.status_cancelled}</option>
+                            <option value="no_show">No show</option>
                           </select>
                         </div>
                         <div>
-                          <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Observações</label>
+                          <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.notes}</label>
                           <input type="text" value={form.notes}
                             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                            placeholder="Observações..."
+                            placeholder={t.notes + '...'}
                             className="input-field !bg-nd-surface/30 text-sm" />
                         </div>
                       </div>
@@ -1121,10 +1123,10 @@ export default function AgendaPage() {
 
                   {modal === 'create' && (
                     <div>
-                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Observações</label>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.notes}</label>
                       <input type="text" value={form.notes}
                         onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                        placeholder="Observações..."
+                        placeholder={t.notes + '...'}
                         className="input-field !bg-nd-surface/30 text-sm" />
                     </div>
                   )}
@@ -1141,18 +1143,18 @@ export default function AgendaPage() {
                   </button>
                   {!selected.closed_at && selected.status !== 'cancelled' && (
                     <button onClick={() => openCloseShift(selected)} className="btn-secondary text-sm flex items-center gap-1.5">
-                      <DollarSign className="w-4 h-4" /> Fechar Turno
+                      <DollarSign className="w-4 h-4" /> {t.closeShift}
                     </button>
                   )}
                 </>
               )}
               <div className="flex-1" />
-              <button onClick={() => setModal('closed')} className="btn-ghost text-sm px-4 py-2">Cancelar</button>
+              <button onClick={() => setModal('closed')} className="btn-ghost text-sm px-4 py-2">{t.cancel}</button>
               <button onClick={handleSave}
                 disabled={saving || (!form.client_id && !form.client_name.trim()) || !form.professional_id}
                 className="btn-primary text-sm px-6">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {modal === 'create' ? 'Agendar' : 'Salvar'}
+                {modal === 'create' ? t.confirm : t.save}
               </button>
             </div>
           </div>
@@ -1167,7 +1169,7 @@ export default function AgendaPage() {
           <div className="relative bg-nd-card rounded-2xl border border-nd-border shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/50">
               <div>
-                <h2 className="text-base font-semibold text-nd-heading">Confirmar Agendamento</h2>
+                <h2 className="text-base font-semibold text-nd-heading">{t.confirmAppointment}</h2>
                 <p className="text-xs text-nd-muted mt-0.5">{getApptDisplayName(selected)} · {formatTime(selected.starts_at)}</p>
               </div>
               <button onClick={() => setModal('closed')}
@@ -1178,14 +1180,14 @@ export default function AgendaPage() {
 
             <div className="p-6 space-y-4">
               <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
-                <p className="text-sm text-blue-800 font-medium">Sinal de confirmação</p>
+                <p className="text-sm text-blue-800 font-medium">{t.deposit}</p>
                 <p className="text-xs text-blue-600 mt-1">
                   Valor cobrado como garantia. Não é devolvido em caso de não comparecimento (exceto exceções).
                 </p>
               </div>
 
               <div>
-                <label className="section-label mb-1.5 block">Valor do sinal (R$)</label>
+                <label className="section-label mb-1.5 block">{t.paidAmount} ({t.currencySymbol})</label>
                 <input type="number" value={advanceForm.amount}
                   onChange={e => setAdvanceForm(f => ({ ...f, amount: e.target.value }))}
                   min="0" step="0.01" placeholder="0,00"
@@ -1194,7 +1196,7 @@ export default function AgendaPage() {
 
               {parseFloat(advanceForm.amount) > 0 && (
                 <div>
-                  <label className="section-label mb-2 block">Forma de Pagamento do Sinal</label>
+                  <label className="section-label mb-2 block">{t.paymentMethod}</label>
                   <div className="grid grid-cols-2 gap-2">
                     {PAYMENT_METHODS.map(pm => {
                       const Icon = pm.icon;
@@ -1221,11 +1223,11 @@ export default function AgendaPage() {
               <div className="flex gap-3 pt-2">
                 <button onClick={() => { handleStatusChange(selected.id, 'confirmed'); setModal('closed'); }}
                   className="btn-secondary text-sm flex-1">
-                  Confirmar sem sinal
+                  {t.confirmNoDeposit}
                 </button>
                 <button onClick={handleConfirmAdvance} disabled={saving} className="btn-primary text-sm flex-1">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  {parseFloat(advanceForm.amount) > 0 ? `Confirmar · ${formatCurrency(parseFloat(advanceForm.amount))}` : 'Confirmar'}
+                  {parseFloat(advanceForm.amount) > 0 ? `${t.confirm} · ${formatCurrency(parseFloat(advanceForm.amount))}` : t.confirm}
                 </button>
               </div>
             </div>
@@ -1240,7 +1242,7 @@ export default function AgendaPage() {
           <div className="relative bg-nd-card rounded-2xl border border-nd-border shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/50">
               <div>
-                <h2 className="text-base font-semibold text-nd-heading">Fechar Turno</h2>
+                <h2 className="text-base font-semibold text-nd-heading">{t.closeShift}</h2>
                 <p className="text-xs text-nd-muted mt-0.5">{getApptDisplayName(selected)} · {formatTime(selected.starts_at)}</p>
               </div>
               <button onClick={() => setModal('closed')}
@@ -1253,13 +1255,13 @@ export default function AgendaPage() {
               {/* Service total + advance info */}
               <div className="p-4 rounded-xl bg-nd-surface/50 border border-nd-border/30 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-nd-muted">Total dos serviços</span>
+                  <span className="text-sm text-nd-muted">{t.total} {t.services.toLowerCase()}</span>
                   <span className="text-lg font-bold text-nd-heading">{formatCurrency(selected.total_amount || 0)}</span>
                 </div>
                 {selected.advance_amount > 0 && (
                   <div className="flex items-center justify-between pt-1 border-t border-nd-border/20">
                     <span className="text-xs text-nd-accent flex items-center gap-1">
-                      Sinal pago ({PAYMENT_METHODS.find(p => p.value === selected.advance_payment_method)?.label || 'N/A'})
+                      {t.deposit} ({PAYMENT_METHODS.find(p => p.value === selected.advance_payment_method)?.label || 'N/A'})
                     </span>
                     <span className="text-sm font-semibold text-nd-accent">-{formatCurrency(selected.advance_amount)}</span>
                   </div>
@@ -1269,7 +1271,7 @@ export default function AgendaPage() {
               {/* Payment method for remaining */}
               <div>
                 <label className="section-label mb-2 block">
-                  Forma de Pagamento {selected.advance_amount > 0 ? '(saldo restante)' : ''}
+                  {t.paymentMethod} {selected.advance_amount > 0 ? `(${t.pendingAmount.toLowerCase()})` : ''}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {PAYMENT_METHODS.map(pm => {
@@ -1296,13 +1298,13 @@ export default function AgendaPage() {
               {/* Discount and Extras */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="section-label mb-1.5 block">Desconto (R$)</label>
+                  <label className="section-label mb-1.5 block">Desconto ({t.currencySymbol})</label>
                   <input type="number" value={closeForm.discount}
                     onChange={e => setCloseForm(f => ({ ...f, discount: e.target.value }))}
                     min="0" step="0.01" className="input-field" />
                 </div>
                 <div>
-                  <label className="section-label mb-1.5 block">Extras (R$)</label>
+                  <label className="section-label mb-1.5 block">Extras ({t.currencySymbol})</label>
                   <input type="number" value={closeForm.extras}
                     onChange={e => setCloseForm(f => ({ ...f, extras: e.target.value }))}
                     min="0" step="0.01" className="input-field" />
@@ -1311,7 +1313,7 @@ export default function AgendaPage() {
 
               {parseFloat(closeForm.extras) > 0 && (
                 <div>
-                  <label className="section-label mb-1.5 block">Descrição dos extras</label>
+                  <label className="section-label mb-1.5 block">{t.description}</label>
                   <input type="text" value={closeForm.extras_description}
                     onChange={e => setCloseForm(f => ({ ...f, extras_description: e.target.value }))}
                     placeholder="Ex: Pedrarias, decoração..."
@@ -1330,7 +1332,7 @@ export default function AgendaPage() {
                 return (
                   <div className="p-4 rounded-xl bg-nd-success/5 border border-nd-success/15 space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-nd-muted">Serviços</span>
+                      <span className="text-nd-muted">{t.services}</span>
                       <span className="text-nd-text">{formatCurrency(baseTotal)}</span>
                     </div>
                     {discount > 0 && (
@@ -1346,17 +1348,17 @@ export default function AgendaPage() {
                       </div>
                     )}
                     <div className="flex justify-between text-sm border-t border-nd-success/15 pt-2">
-                      <span className="text-nd-heading font-medium">Total</span>
+                      <span className="text-nd-heading font-medium">{t.total}</span>
                       <span className="text-nd-text font-semibold">{formatCurrency(finalTotal)}</span>
                     </div>
                     {advancePaid > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-nd-accent">Sinal já pago</span>
+                        <span className="text-nd-accent">{t.deposit}</span>
                         <span className="text-nd-accent">-{formatCurrency(advancePaid)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm font-bold border-t border-nd-success/15 pt-2">
-                      <span className="text-nd-heading">A receber agora</span>
+                      <span className="text-nd-heading">{t.pendingAmount}</span>
                       <span className="text-nd-success text-lg">{formatCurrency(remaining)}</span>
                     </div>
                   </div>
@@ -1364,10 +1366,10 @@ export default function AgendaPage() {
               })()}
 
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">Cancelar</button>
+                <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">{t.cancel}</button>
                 <button onClick={handleCloseShift} disabled={saving} className="btn-primary text-sm flex-1">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Fechar Turno
+                  {t.closeShift}
                 </button>
               </div>
             </div>

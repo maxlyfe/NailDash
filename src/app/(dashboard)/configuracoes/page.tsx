@@ -3,9 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
-import { Settings, Save, Loader2, Clock } from 'lucide-react';
-
-const DAY_NAMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+import { useT, localeOptions } from '@/contexts/LanguageContext';
+import { Settings, Save, Loader2, Clock, Globe } from 'lucide-react';
 
 type DayHours = { open: string; close: string } | null;
 type BusinessHours = Record<string, DayHours>;
@@ -23,6 +22,9 @@ const DEFAULT_HOURS: BusinessHours = {
 export default function ConfiguracoesPage() {
   const { salon } = useAuth();
   const supabase = useSupabase();
+  const { t, locale, setLocale } = useT();
+
+  const DAY_NAMES = [t.day_sunday, t.day_monday, t.day_tuesday, t.day_wednesday, t.day_thursday, t.day_friday, t.day_saturday];
 
   const [hours, setHours] = useState<BusinessHours>(DEFAULT_HOURS);
   const [saving, setSaving] = useState(false);
@@ -73,14 +75,34 @@ export default function ConfiguracoesPage() {
   return (
     <div className="space-y-6 animate-fade-in max-w-2xl">
       <div>
-        <h1 className="page-title">Configurações</h1>
-        <p className="text-nd-muted text-sm mt-1">Horários de funcionamento e preferências</p>
+        <h1 className="page-title">{t.settings}</h1>
+        <p className="text-nd-muted text-sm mt-1">{t.settingsSubtitle}</p>
+      </div>
+
+      {/* Language */}
+      <div className="card">
+        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-nd-border/50">
+          <Globe className="w-4 h-4 text-nd-accent" />
+          <h2 className="text-sm font-semibold text-nd-heading">{t.language}</h2>
+        </div>
+        <div className="p-5">
+          <label className="text-xs font-medium text-nd-muted mb-2 block">{t.languageLabel}</label>
+          <select
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as 'pt-BR' | 'es-AR')}
+            className="input-field"
+          >
+            {localeOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="card">
         <div className="flex items-center gap-2.5 px-5 py-4 border-b border-nd-border/50">
           <Clock className="w-4 h-4 text-nd-accent" />
-          <h2 className="text-sm font-semibold text-nd-heading">Horário de Funcionamento</h2>
+          <h2 className="text-sm font-semibold text-nd-heading">{t.businessHours}</h2>
         </div>
 
         <div className="p-5 space-y-3">
@@ -109,7 +131,7 @@ export default function ConfiguracoesPage() {
                       onChange={e => updateHour(day, 'open', e.target.value)}
                       className="input-field !py-1.5 !px-2 text-sm w-28"
                     />
-                    <span className="text-nd-muted text-xs">até</span>
+                    <span className="text-nd-muted text-xs">{t.until}</span>
                     <input
                       type="time"
                       value={hours[day]?.close || '18:00'}
@@ -118,7 +140,7 @@ export default function ConfiguracoesPage() {
                     />
                   </div>
                 ) : (
-                  <span className="text-xs text-nd-muted italic">Fechado</span>
+                  <span className="text-xs text-nd-muted italic">{t.closedDay}</span>
                 )}
               </div>
             );
@@ -128,9 +150,9 @@ export default function ConfiguracoesPage() {
         <div className="px-5 py-4 border-t border-nd-border/50 flex items-center gap-3">
           <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Salvar
+            {t.save}
           </button>
-          {saved && <span className="text-xs text-nd-success font-medium">Salvo com sucesso!</span>}
+          {saved && <span className="text-xs text-nd-success font-medium">{t.savedSuccess}</span>}
         </div>
       </div>
     </div>

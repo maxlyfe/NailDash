@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import type { Service, ServiceCategory } from '@/lib/types';
 import {
@@ -13,6 +14,7 @@ type ModalMode = 'closed' | 'create' | 'edit';
 
 export default function ServicosPage() {
   const { salon } = useAuth();
+  const { t, locale } = useT();
   const supabase = useSupabase();
 
   const [services, setServices] = useState<Service[]>([]);
@@ -89,7 +91,7 @@ export default function ServicosPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Excluir este serviço?')) return;
+    if (!confirm(t.deleteServiceConfirm)) return;
     await supabase.from('services').delete().eq('id', id);
     setModal('closed');
     fetchData();
@@ -105,22 +107,22 @@ export default function ServicosPage() {
   const addonCount = services.filter(s => s.is_addon).length;
 
   const formatCurrency = (v: number) =>
-    v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    v.toLocaleString(locale, { style: 'currency', currency: t.currency });
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Serviços</h1>
+          <h1 className="page-title">{t.services}</h1>
           <p className="text-nd-muted text-sm mt-1">
             {services.length > 0
-              ? `${activeCount} ativo${activeCount !== 1 ? 's' : ''} · ${addonCount} adiciona${addonCount !== 1 ? 'is' : 'l'}`
-              : 'Catálogo de serviços do salão'}
+              ? `${activeCount} ${t.activeServices} · ${addonCount} ${t.addonServices}`
+              : t.serviceCatalog}
           </p>
         </div>
         <button onClick={openCreate} className="btn-primary text-sm">
           <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Novo</span>
+          <span className="hidden sm:inline">{t.add}</span>
         </button>
       </div>
 
@@ -130,7 +132,7 @@ export default function ServicosPage() {
           <button
             onClick={() => setFilterCat('all')}
             className={`badge whitespace-nowrap ${filterCat === 'all' ? 'bg-nd-accent/15 text-nd-accent' : 'bg-nd-surface text-nd-muted'}`}
-          >Todos ({services.length})</button>
+          >{t.all} ({services.length})</button>
           {categories.map(cat => {
             const count = services.filter(s => s.category_id === cat.id).length;
             return (
@@ -144,7 +146,7 @@ export default function ServicosPage() {
           <button
             onClick={() => setFilterCat('addon')}
             className={`badge whitespace-nowrap ${filterCat === 'addon' ? 'bg-nd-warning/15 text-nd-warning' : 'bg-nd-surface text-nd-muted'}`}
-          >Adicionais ({addonCount})</button>
+          >{t.addons} ({addonCount})</button>
         </div>
       )}
 
@@ -161,10 +163,10 @@ export default function ServicosPage() {
           <div className="w-16 h-16 rounded-2xl bg-nd-surface flex items-center justify-center mb-5">
             <Scissors className="w-8 h-8 text-nd-muted/30" />
           </div>
-          <p className="text-sm font-semibold text-nd-text">Nenhum serviço cadastrado</p>
-          <p className="text-sm text-nd-muted mt-2">Cadastre seus serviços para começar.</p>
+          <p className="text-sm font-semibold text-nd-text">{t.noServicesYet}</p>
+          <p className="text-sm text-nd-muted mt-2">{t.registerServicesToStart}</p>
           <button onClick={openCreate} className="btn-primary mt-5 text-sm">
-            <Plus className="w-4 h-4" /> Novo Serviço
+            <Plus className="w-4 h-4" /> {t.newService}
           </button>
         </div>
       )}
@@ -191,7 +193,7 @@ export default function ServicosPage() {
                       {svc.category && (
                         <span className="badge-muted text-[10px]">{svc.category.name}</span>
                       )}
-                      {svc.is_addon && <span className="badge-warning text-[10px]">Adicional</span>}
+                      {svc.is_addon && <span className="badge-warning text-[10px]">{t.isAddon}</span>}
                     </div>
                   </div>
                 </div>
@@ -217,7 +219,7 @@ export default function ServicosPage() {
           <div className="relative bg-nd-card rounded-2xl border border-nd-border shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/50">
               <h2 className="text-base font-semibold text-nd-heading">
-                {modal === 'create' ? 'Novo Serviço' : 'Editar Serviço'}
+                {modal === 'create' ? t.newService : t.editService}
               </h2>
               <button onClick={() => setModal('closed')}
                 className="p-1.5 rounded-xl hover:bg-nd-surface transition-colors">
@@ -227,7 +229,7 @@ export default function ServicosPage() {
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="section-label mb-1.5 block">Nome *</label>
+                <label className="section-label mb-1.5 block">{t.name} *</label>
                 <input type="text" value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="Ex: Manicure tradicional"
@@ -236,14 +238,14 @@ export default function ServicosPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="section-label mb-1.5 block">Preço (R$)</label>
+                  <label className="section-label mb-1.5 block">{t.price} ({t.currencySymbol})</label>
                   <input type="number" value={form.price}
                     onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
                     placeholder="0,00" step="0.01" min="0"
                     className="input-field" />
                 </div>
                 <div>
-                  <label className="section-label mb-1.5 block">Duração (min)</label>
+                  <label className="section-label mb-1.5 block">{t.duration}</label>
                   <input type="number" value={form.duration_minutes}
                     onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))}
                     placeholder="60" min="5" step="5"
@@ -252,11 +254,11 @@ export default function ServicosPage() {
               </div>
 
               <div>
-                <label className="section-label mb-1.5 block">Categoria</label>
+                <label className="section-label mb-1.5 block">{t.category}</label>
                 <select value={form.category_id}
                   onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
                   className="input-field">
-                  <option value="">Sem categoria</option>
+                  <option value="">{t.noCategory}</option>
                   {categories.map(cat => (
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
@@ -264,10 +266,10 @@ export default function ServicosPage() {
               </div>
 
               <div>
-                <label className="section-label mb-1.5 block">Descrição</label>
+                <label className="section-label mb-1.5 block">{t.description}</label>
                 <textarea value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder="Detalhes do serviço..."
+                  placeholder={t.serviceDetails}
                   className="input-field resize-none h-16" />
               </div>
 
@@ -276,13 +278,13 @@ export default function ServicosPage() {
                   <input type="checkbox" checked={form.is_addon}
                     onChange={e => setForm(f => ({ ...f, is_addon: e.target.checked }))}
                     className="w-4 h-4 rounded border-nd-border text-nd-accent focus:ring-nd-accent/20" />
-                  <span className="text-sm text-nd-text">Adicional</span>
+                  <span className="text-sm text-nd-text">{t.isAddon}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={form.is_active}
                     onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
                     className="w-4 h-4 rounded border-nd-border text-nd-accent focus:ring-nd-accent/20" />
-                  <span className="text-sm text-nd-text">Ativo</span>
+                  <span className="text-sm text-nd-text">{t.isActive}</span>
                 </label>
               </div>
 
@@ -293,11 +295,11 @@ export default function ServicosPage() {
                   </button>
                 )}
                 <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">
-                  Cancelar
+                  {t.cancel}
                 </button>
                 <button onClick={handleSave} disabled={saving || !form.name.trim()} className="btn-primary text-sm flex-1">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  {modal === 'create' ? 'Cadastrar' : 'Salvar'}
+                  {modal === 'create' ? t.add : t.save}
                 </button>
               </div>
             </div>

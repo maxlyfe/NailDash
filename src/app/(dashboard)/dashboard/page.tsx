@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import {
   CalendarDays, DollarSign, TrendingUp, Users,
@@ -29,6 +30,7 @@ type RecentTransaction = {
 
 export default function DashboardPage() {
   const { user, salon, loading: authLoading } = useAuth();
+  const { t, locale } = useT();
   const supabase = useSupabase();
   const firstName = user?.user_metadata?.full_name?.split(' ')[0] || '';
 
@@ -36,9 +38,13 @@ export default function DashboardPage() {
   const [dateStr, setDateStr] = useState('');
 
   useEffect(() => {
-    setGreeting(getGreeting());
-    setDateStr(new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }));
-  }, []);
+    const h = new Date().getHours();
+    if (h < 12) setGreeting(t.greeting_morning);
+    else if (h < 18) setGreeting(t.greeting_afternoon);
+    else setGreeting(t.greeting_evening);
+
+    setDateStr(new Date().toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' }));
+  }, [t, locale]);
 
   const [stats, setStats] = useState<Stats>({
     revenueToday: 0, totalClients: 0, avgTicket: 0,
@@ -108,15 +114,15 @@ export default function DashboardPage() {
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
   const formatCurrency = (v: number) =>
-    v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    v.toLocaleString(locale, { style: 'currency', currency: t.currency });
 
   const STATS_CONFIG = [
-    { label: 'Receita hoje', value: formatCurrency(stats.revenueToday), icon: DollarSign, accent: 'text-nd-success bg-nd-success/10' },
-    { label: 'Turnos hoje', value: stats.appointmentsToday.toString(), icon: CalendarDays, accent: 'text-nd-accent bg-nd-accent/10' },
-    { label: 'Abertos', value: stats.appointmentsOpen.toString(), icon: CircleDot, accent: 'text-nd-warning bg-nd-warning/10' },
-    { label: 'Fechados', value: stats.appointmentsClosed.toString(), icon: CheckCircle2, accent: 'text-nd-success bg-nd-success/10' },
-    { label: 'Clientes', value: stats.totalClients.toString(), icon: Users, accent: 'text-nd-highlight bg-nd-highlight/10' },
-    { label: 'Ticket médio', value: formatCurrency(stats.avgTicket), icon: TrendingUp, accent: 'text-nd-warning bg-nd-warning/10' },
+    { label: t.revenueToday, value: formatCurrency(stats.revenueToday), icon: DollarSign, accent: 'text-nd-success bg-nd-success/10' },
+    { label: t.shiftsToday, value: stats.appointmentsToday.toString(), icon: CalendarDays, accent: 'text-nd-accent bg-nd-accent/10' },
+    { label: t.open, value: stats.appointmentsOpen.toString(), icon: CircleDot, accent: 'text-nd-warning bg-nd-warning/10' },
+    { label: t.closed, value: stats.appointmentsClosed.toString(), icon: CheckCircle2, accent: 'text-nd-success bg-nd-success/10' },
+    { label: t.clients, value: stats.totalClients.toString(), icon: Users, accent: 'text-nd-highlight bg-nd-highlight/10' },
+    { label: t.avgTicket, value: formatCurrency(stats.avgTicket), icon: TrendingUp, accent: 'text-nd-warning bg-nd-warning/10' },
   ];
 
   return (
@@ -157,9 +163,9 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-4 border-b border-nd-border/50">
             <div className="flex items-center gap-2.5">
               <Clock className="w-4 h-4 text-nd-accent" />
-              <h2 className="text-sm font-semibold text-nd-heading">Últimas Vendas</h2>
+              <h2 className="text-sm font-semibold text-nd-heading">{t.recentSales}</h2>
             </div>
-            <a href="/financeiro" className="badge-info cursor-pointer hover:bg-nd-accent/20 transition-colors">Ver tudo</a>
+            <a href="/financeiro" className="badge-info cursor-pointer hover:bg-nd-accent/20 transition-colors">{t.seeAll}</a>
           </div>
 
           {loading ? (
@@ -171,9 +177,9 @@ export default function DashboardPage() {
               <div className="w-14 h-14 rounded-2xl bg-nd-surface flex items-center justify-center mb-4">
                 <CalendarDays className="w-7 h-7 text-nd-muted/30" />
               </div>
-              <p className="text-sm font-medium text-nd-muted">Sem vendas registradas</p>
+              <p className="text-sm font-medium text-nd-muted">{t.noSalesRecorded}</p>
               <p className="text-xs text-nd-muted/60 mt-1.5 max-w-xs">
-                As vendas aparecerão aqui conforme os turnos forem fechados.
+                {t.salesAppearHere}
               </p>
             </div>
           ) : (
@@ -185,11 +191,11 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-nd-text truncate">
-                      {(Array.isArray(tx.client) ? tx.client[0]?.name : tx.client?.name) || tx.description || 'Venda'}
+                      {(Array.isArray(tx.client) ? tx.client[0]?.name : tx.client?.name) || tx.description || t.revenue}
                     </p>
                     <p className="text-xs text-nd-muted">
                       {(() => { const pn = Array.isArray(tx.professional) ? tx.professional[0]?.name : tx.professional?.name; return pn ? `${pn} · ` : ''; })()}
-                      {new Date(tx.transaction_date).toLocaleDateString('pt-BR')}
+                      {new Date(tx.transaction_date).toLocaleDateString(locale)}
                     </p>
                   </div>
                   <span className="text-sm font-semibold text-nd-success shrink-0">
@@ -205,17 +211,17 @@ export default function DashboardPage() {
         <div className="card">
           <div className="flex items-center gap-2.5 px-5 py-4 border-b border-nd-border/50">
             <Sparkles className="w-4 h-4 text-nd-accent" />
-            <h2 className="text-sm font-semibold text-nd-heading">Ações Rápidas</h2>
+            <h2 className="text-sm font-semibold text-nd-heading">{t.quickActions}</h2>
           </div>
           <div className="p-3 space-y-1">
             {[
-              { icon: CalendarDays, label: 'Novo Agendamento', sub: 'Agendar serviço', href: '/agenda', color: 'text-nd-accent bg-nd-accent/10' },
-              { icon: Users, label: 'Adicionar Cliente', sub: 'Novo cadastro', href: '/clientes', color: 'text-nd-highlight bg-nd-highlight/10' },
-              { icon: DollarSign, label: 'Ver Financeiro', sub: 'Receitas e despesas', href: '/financeiro', color: 'text-nd-success bg-nd-success/10' },
+              { icon: CalendarDays, label: t.newAppointment, sub: t.scheduleService, href: '/agenda', color: 'text-nd-accent bg-nd-accent/10' },
+              { icon: Users, label: t.addClient, sub: t.newRecord, href: '/clientes', color: 'text-nd-highlight bg-nd-highlight/10' },
+              { icon: DollarSign, label: t.viewFinancial, sub: t.revenueAndExpenses, href: '/financeiro', color: 'text-nd-success bg-nd-success/10' },
             ].map((action) => {
               const Icon = action.icon;
               return (
-                <a key={action.label} href={action.href}
+                <a key={action.href} href={action.href}
                   className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-nd-surface transition-all group">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${action.color}`}>
                     <Icon className="w-4.5 h-4.5" />
@@ -233,11 +239,4 @@ export default function DashboardPage() {
       </div>
     </div>
   );
-}
-
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Bom dia';
-  if (h < 18) return 'Boa tarde';
-  return 'Boa noite';
 }

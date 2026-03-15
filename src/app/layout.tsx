@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Poppins } from 'next/font/google';
+import { LanguageProvider } from '@/contexts/LanguageContext';
 import './globals.css';
 
 const poppins = Poppins({
@@ -28,7 +29,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR" className={poppins.variable}>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <LanguageProvider>{children}</LanguageProvider>
+      </body>
     </html>
   );
 }

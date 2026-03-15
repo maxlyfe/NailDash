@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import type { Professional } from '@/lib/types';
 import {
@@ -11,15 +12,16 @@ import {
 
 type ModalMode = 'closed' | 'create' | 'edit';
 
-const ROLE_LABELS: Record<string, string> = {
-  nail_tech: 'Nail Designer',
-  admin: 'Admin',
-  receptionist: 'Recepcionista',
-};
-
 export default function ProfissionaisPage() {
   const { salon } = useAuth();
+  const { t } = useT();
   const supabase = useSupabase();
+
+  const ROLE_LABELS: Record<string, string> = {
+    nail_tech: t.roleNailDesigner,
+    admin: t.roleAdmin,
+    receptionist: t.roleReceptionist,
+  };
 
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,7 +93,7 @@ export default function ProfissionaisPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Excluir este profissional?')) return;
+    if (!confirm(t.deleteProfessionalConfirm)) return;
     await supabase.from('professionals').delete().eq('id', id);
     setModal('closed');
     fetchData();
@@ -103,16 +105,16 @@ export default function ProfissionaisPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Equipe</h1>
+          <h1 className="page-title">{t.team}</h1>
           <p className="text-nd-muted text-sm mt-1">
             {professionals.length > 0
-              ? `${activeCount} profissiona${activeCount !== 1 ? 'is' : 'l'} ativo${activeCount !== 1 ? 's' : ''}`
-              : 'Profissionais do salão'}
+              ? `${activeCount} ${t.activeProfessionals}`
+              : t.salonProfessionals}
           </p>
         </div>
         <button onClick={openCreate} className="btn-primary text-sm">
           <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Adicionar</span>
+          <span className="hidden sm:inline">{t.add}</span>
         </button>
       </div>
 
@@ -127,10 +129,10 @@ export default function ProfissionaisPage() {
           <div className="w-16 h-16 rounded-2xl bg-nd-surface flex items-center justify-center mb-5">
             <UserCog className="w-8 h-8 text-nd-muted/30" />
           </div>
-          <p className="text-sm font-semibold text-nd-text">Nenhum profissional cadastrado</p>
-          <p className="text-sm text-nd-muted mt-2">Adicione sua equipe para gerenciar agendamentos.</p>
+          <p className="text-sm font-semibold text-nd-text">{t.noProfessionalsYet}</p>
+          <p className="text-sm text-nd-muted mt-2">{t.addTeamToManage}</p>
           <button onClick={openCreate} className="btn-primary mt-5 text-sm">
-            <Plus className="w-4 h-4" /> Adicionar
+            <Plus className="w-4 h-4" /> {t.add}
           </button>
         </div>
       )}
@@ -150,7 +152,7 @@ export default function ProfissionaisPage() {
                   <p className="text-xs text-nd-muted mt-0.5">{ROLE_LABELS[prof.role] || prof.role}</p>
                   <div className="flex items-center gap-2 mt-2">
                     <span className={prof.is_active ? 'badge-success' : 'badge-muted'}>
-                      {prof.is_active ? 'Ativa' : 'Inativa'}
+                      {prof.is_active ? t.active : t.inactive}
                     </span>
                     {prof.commission_percent > 0 && (
                       <span className="text-xs text-nd-muted flex items-center gap-0.5">
@@ -190,7 +192,7 @@ export default function ProfissionaisPage() {
           <div className="relative bg-nd-card rounded-2xl border border-nd-border shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/50">
               <h2 className="text-base font-semibold text-nd-heading">
-                {modal === 'create' ? 'Novo Profissional' : 'Editar Profissional'}
+                {modal === 'create' ? t.newProfessional : t.editProfessional}
               </h2>
               <button onClick={() => setModal('closed')}
                 className="p-1.5 rounded-xl hover:bg-nd-surface transition-colors">
@@ -200,23 +202,23 @@ export default function ProfissionaisPage() {
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="section-label mb-1.5 block">Nome *</label>
+                <label className="section-label mb-1.5 block">{t.name} *</label>
                 <input type="text" value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="Nome do profissional"
+                  placeholder={t.name}
                   className="input-field" autoFocus />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="section-label mb-1.5 block">Telefone</label>
+                  <label className="section-label mb-1.5 block">{t.phone}</label>
                   <input type="tel" value={form.phone}
                     onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                     placeholder="(11) 99999-9999"
                     className="input-field" />
                 </div>
                 <div>
-                  <label className="section-label mb-1.5 block">Email</label>
+                  <label className="section-label mb-1.5 block">{t.email}</label>
                   <input type="email" value={form.email}
                     onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                     placeholder="email@exemplo.com"
@@ -226,17 +228,17 @@ export default function ProfissionaisPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="section-label mb-1.5 block">Função</label>
+                  <label className="section-label mb-1.5 block">{t.role}</label>
                   <select value={form.role}
                     onChange={e => setForm(f => ({ ...f, role: e.target.value as Professional['role'] }))}
                     className="input-field">
-                    <option value="nail_tech">Nail Designer</option>
-                    <option value="admin">Admin</option>
-                    <option value="receptionist">Recepcionista</option>
+                    <option value="nail_tech">{t.roleNailDesigner}</option>
+                    <option value="admin">{t.roleAdmin}</option>
+                    <option value="receptionist">{t.roleReceptionist}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="section-label mb-1.5 block">Comissão (%)</label>
+                  <label className="section-label mb-1.5 block">{t.commission}</label>
                   <input type="number" value={form.commission_percent}
                     onChange={e => setForm(f => ({ ...f, commission_percent: e.target.value }))}
                     placeholder="0" min="0" max="100" step="1"
@@ -248,7 +250,7 @@ export default function ProfissionaisPage() {
                 <input type="checkbox" checked={form.is_active}
                   onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
                   className="w-4 h-4 rounded border-nd-border text-nd-accent focus:ring-nd-accent/20" />
-                <span className="text-sm text-nd-text">Ativo</span>
+                <span className="text-sm text-nd-text">{t.active}</span>
               </label>
 
               <div className="flex gap-3 pt-2">
@@ -257,10 +259,10 @@ export default function ProfissionaisPage() {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 )}
-                <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">Cancelar</button>
+                <button onClick={() => setModal('closed')} className="btn-secondary text-sm flex-1">{t.cancel}</button>
                 <button onClick={handleSave} disabled={saving || !form.name.trim()} className="btn-primary text-sm flex-1">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  {modal === 'create' ? 'Cadastrar' : 'Salvar'}
+                  {modal === 'create' ? t.add : t.save}
                 </button>
               </div>
             </div>
