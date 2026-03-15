@@ -469,8 +469,8 @@ export default function FinanceiroPage() {
 
                 <div className="space-y-3">
                   {/* Fundo de caixa inicial */}
-                  <div className="flex items-center justify-between py-2">
-                    <span className="text-sm text-nd-text font-medium">Fundo de caixa inicial</span>
+                  <div className="flex items-center justify-between py-2 gap-2">
+                    <span className="text-xs sm:text-sm text-nd-text font-medium">Fundo de caixa inicial</span>
                     <div className="flex items-center gap-2">
                       <ClosingValue
                         value={startingBalance}
@@ -625,7 +625,7 @@ export default function FinanceiroPage() {
 
               <div>
                 <label className="section-label mb-1.5 block">Forma de pagamento</label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {([
                     { id: 'pix', label: 'PIX', icon: Smartphone },
                     { id: 'cash', label: 'Dinheiro', icon: Banknote },
@@ -697,7 +697,7 @@ function StatCard({ label, value, color, icon: Icon, iconBg }: {
         </div>
         <span className="section-label">{label}</span>
       </div>
-      <p className={`text-lg sm:text-xl font-bold ${color} truncate`}>{value}</p>
+      <p className={`text-sm sm:text-xl font-bold ${color} truncate`}>{value}</p>
     </div>
   );
 }
@@ -768,9 +768,9 @@ function TxList({ items, emptyLabel, colorClass, prefix, fmt, onDelete, getClien
     <div className="card overflow-hidden">
       <div className="divide-y divide-nd-border/50 max-h-[500px] overflow-y-auto">
         {items.map(tx => (
-          <div key={tx.id} className="flex items-center gap-3 px-5 py-3 hover:bg-nd-surface/50 transition-colors group">
+          <div key={tx.id} className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 hover:bg-nd-surface/50 transition-colors group">
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-nd-text truncate">
+              <p className="text-xs sm:text-sm font-medium text-nd-text truncate">
                 {tx.description || tx.type}
                 {tx.installment_total && tx.installment_total > 1 && (
                   <span className="text-[10px] text-nd-muted ml-1">
@@ -778,19 +778,19 @@ function TxList({ items, emptyLabel, colorClass, prefix, fmt, onDelete, getClien
                   </span>
                 )}
               </p>
-              <div className="flex items-center gap-2 mt-0.5">
-                {getClientName(tx) && <span className="text-xs text-nd-muted">{getClientName(tx)}</span>}
+              <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 flex-wrap">
+                {getClientName(tx) && <span className="text-[10px] sm:text-xs text-nd-muted">{getClientName(tx)}</span>}
                 {tx.category && <span className="badge-muted text-[9px]">{tx.category}</span>}
-                <span className="text-xs text-nd-muted/60">
+                <span className="text-[10px] sm:text-xs text-nd-muted/60">
                   {new Date(tx.transaction_date).toLocaleDateString('pt-BR')}
                 </span>
               </div>
             </div>
-            <span className={`text-sm font-semibold ${colorClass} shrink-0`}>
+            <span className={`text-xs sm:text-sm font-semibold ${colorClass} shrink-0`}>
               {prefix} {fmt(tx.total_amount)}
             </span>
             <button onClick={() => onDelete(tx.id)}
-              className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-nd-danger/10 text-nd-muted hover:text-nd-danger transition-all shrink-0">
+              className="p-1.5 rounded-lg sm:opacity-0 sm:group-hover:opacity-100 hover:bg-nd-danger/10 text-nd-muted hover:text-nd-danger transition-all shrink-0">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>

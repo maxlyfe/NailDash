@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
@@ -32,11 +32,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [salon, setSalon] = useState<Salon | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const fetchingRef = useRef(false);
+  const salonLoadedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
 
     const fetchSalon = async (u: User) => {
+      if (fetchingRef.current || salonLoadedRef.current) return;
+      fetchingRef.current = true;
       try {
         // Try to find salon owned by this user
         const { data: owned } = await supabase
@@ -46,8 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .limit(1)
           .maybeSingle();
 
-        if (cancelled) return;
-        if (owned) { setSalon(owned); return; }
+        if (cancelled) { fetchingRef.current = false; return; }
+        if (owned) { setSalon(owned); salonLoadedRef.current = true; fetchingRef.current = false; return; }
 
         // Fallback: any salon visible via RLS (e.g. staff member)
         const { data: visible } = await supabase
@@ -56,8 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .limit(1)
           .maybeSingle();
 
-        if (cancelled) return;
-        if (visible) { setSalon(visible); return; }
+        if (cancelled) { fetchingRef.current = false; return; }
+        if (visible) { setSalon(visible); salonLoadedRef.current = true; fetchingRef.current = false; return; }
 
         // No salon found — auto-create for new user
         const displayName = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Meu Salão';
@@ -79,14 +83,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('id, name, owner_id, business_hours')
           .single();
 
-        if (cancelled) return;
+        if (cancelled) { fetchingRef.current = false; return; }
         if (created && !createErr) {
           setSalon(created);
+          salonLoadedRef.current = true;
         } else {
           console.error('Failed to create salon:', createErr?.message);
+          salonLoadedRef.current = true; // Mark as attempted to avoid infinite retry
         }
       } catch (err) {
         console.error('fetchSalon error:', err);
+        salonLoadedRef.current = true;
+      } finally {
+        fetchingRef.current = false;
       }
     };
 
@@ -100,6 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!sessionUser) {
           setSalon(null);
+          salonLoadedRef.current = false;
+          fetchingRef.current = false;
           // Don't stop loading if OAuth code exchange is pending
           if (event === 'INITIAL_SESSION' && typeof window !== 'undefined' && window.location.search.includes('code=')) {
             // PKCE flow: code will be exchanged, then SIGNED_IN fires
@@ -110,6 +121,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // Fetch salon on initial load and new sign-in
+        if (event === 'SIGNED_IN') {
+          salonLoadedRef.current = false;
+          fetchingRef.current = false;
+        }
         if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
           await fetchSalon(sessionUser);
           if (!cancelled) setLoading(false);
@@ -117,10 +132,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // Safety timeout — if nothing fires in 5 seconds, stop loading
+    // Safety timeout — if nothing fires in 15 seconds, stop loading
     const timeout = setTimeout(() => {
       if (!cancelled) setLoading(false);
-    }, 5000);
+    }, 15000);
 
     return () => {
       cancelled = true;
@@ -137,6 +152,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(null);
     setSalon(null);
+    salonLoadedRef.current = false;
+    fetchingRef.current = false;
     window.location.href = '/login';
   };
 

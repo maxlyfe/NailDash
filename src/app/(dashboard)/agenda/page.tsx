@@ -425,48 +425,36 @@ export default function AgendaPage() {
     }
 
     if (modal === 'create') {
-      const { error: err } = await supabase.from('appointments').insert(payload);
-      if (err) { alert(`Erro: ${err.message}`); setSaving(false); return; }
-      // Insert appointment_services + advance transaction
-      const { data: newAppt } = await supabase
-        .from('appointments')
-        .select('id')
-        .eq('salon_id', salon.id)
-        .eq('starts_at', payload.starts_at)
-        .eq('professional_id', payload.professional_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-      if (newAppt) {
-        if (form.service_ids.length > 0) {
-          const svcRows = form.service_ids.map(sid => {
-            const svc = services.find(s => s.id === sid)!;
-            return {
-              appointment_id: newAppt.id,
-              service_id: sid,
-              price: svc.price,
-              duration_minutes: svc.duration_minutes,
-            };
-          });
-          await supabase.from('appointment_services').insert(svcRows);
-        }
-        // Create advance transaction (transaction_date = appointment date, not today)
-        if (advanceAmt > 0) {
-          await supabase.from('transactions').insert({
-            salon_id: salon.id,
-            type: 'sale',
+      const { data: newAppt, error: err } = await supabase.from('appointments').insert(payload).select('id').single();
+      if (err || !newAppt) { alert(`Erro: ${err?.message || 'Falha ao criar'}`); setSaving(false); return; }
+      if (form.service_ids.length > 0) {
+        const svcRows = form.service_ids.map(sid => {
+          const svc = services.find(s => s.id === sid)!;
+          return {
             appointment_id: newAppt.id,
-            client_id: form.client_id || null,
-            professional_id: form.professional_id,
-            description: `Adiantamento: ${form.client_name.trim() || 'Cliente'}`,
-            total_amount: advanceAmt,
-            service_price: 0, discount: 0, tax: 0, tips: 0,
-            category: 'adiantamento',
-            [`payment_${form.advance_payment_method}`]: advanceAmt,
-            transaction_date: new Date(form.starts_at).toISOString(),
-            registered_at: new Date().toISOString(),
-          });
-        }
+            service_id: sid,
+            price: svc.price,
+            duration_minutes: svc.duration_minutes,
+          };
+        });
+        await supabase.from('appointment_services').insert(svcRows);
+      }
+      // Create advance transaction (transaction_date = appointment date, not today)
+      if (advanceAmt > 0) {
+        await supabase.from('transactions').insert({
+          salon_id: salon.id,
+          type: 'sale',
+          appointment_id: newAppt.id,
+          client_id: form.client_id || null,
+          professional_id: form.professional_id,
+          description: `Adiantamento: ${form.client_name.trim() || 'Cliente'}`,
+          total_amount: advanceAmt,
+          service_price: 0, discount: 0, tax: 0, tips: 0,
+          category: 'adiantamento',
+          [`payment_${form.advance_payment_method}`]: advanceAmt,
+          transaction_date: new Date(form.starts_at).toISOString(),
+          registered_at: new Date().toISOString(),
+        });
       }
     } else if (selected) {
       const { error: err } = await supabase.from('appointments').update(payload).eq('id', selected.id);
