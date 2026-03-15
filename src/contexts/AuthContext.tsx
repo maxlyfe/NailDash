@@ -100,6 +100,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!sessionUser) {
           setSalon(null);
+          // Don't stop loading if OAuth code exchange is pending
+          if (event === 'INITIAL_SESSION' && typeof window !== 'undefined' && window.location.search.includes('code=')) {
+            // PKCE flow: code will be exchanged, then SIGNED_IN fires
+            return;
+          }
           setLoading(false);
           return;
         }

@@ -363,7 +363,7 @@ export default function FinanceiroPage() {
       </div>
 
       {/* Month nav */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button onClick={() => navigateMonth(-1)} className="btn-ghost p-2">
             <ChevronLeft className="w-4 h-4" />
@@ -374,10 +374,10 @@ export default function FinanceiroPage() {
           </button>
         </div>
         {/* Tabs */}
-        <div className="flex gap-1 bg-nd-surface rounded-xl p-0.5">
+        <div className="flex gap-1 bg-nd-surface rounded-xl p-0.5 w-full sm:w-auto">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`text-xs px-3 py-1.5 rounded-lg transition-all ${tab === t.id ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
+              className={`text-xs px-3 py-1.5 rounded-lg transition-all flex-1 sm:flex-none ${tab === t.id ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
               {t.label}
             </button>
           ))}
@@ -697,7 +697,7 @@ function StatCard({ label, value, color, icon: Icon, iconBg }: {
         </div>
         <span className="section-label">{label}</span>
       </div>
-      <p className={`text-xl font-bold ${color}`}>{value}</p>
+      <p className={`text-lg sm:text-xl font-bold ${color} truncate`}>{value}</p>
     </div>
   );
 }

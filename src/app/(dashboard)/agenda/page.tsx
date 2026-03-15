@@ -95,6 +95,16 @@ function parseHour(timeStr: string): number {
   return parseInt(timeStr.split(':')[0], 10);
 }
 
+function toLocalInput(isoStr: string): string {
+  const d = new Date(isoStr);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${mo}-${day}T${h}:${min}`;
+}
+
 /* ─── Component ─── */
 export default function AgendaPage() {
   const { salon, user, loading: authLoading } = useAuth();
@@ -246,7 +256,10 @@ export default function AgendaPage() {
 
   const getApptForDay = (day: Date) => {
     const ds = toDateStr(day);
-    return appointments.filter(a => a.starts_at.startsWith(ds));
+    return appointments.filter(a => {
+      const ad = new Date(a.starts_at);
+      return toDateStr(ad) === ds;
+    });
   };
 
   const getApptStyle = (appt: ApptRow) => {
@@ -297,14 +310,26 @@ export default function AgendaPage() {
     setModal('create');
   };
 
-  const openEdit = (appt: ApptRow) => {
+  const openEdit = async (appt: ApptRow) => {
+    // Load services linked to this appointment
+    let svcIds: string[] = [];
+    if (salon?.id) {
+      const { data: apptSvcs } = await supabase
+        .from('appointment_services')
+        .select('service_id')
+        .eq('appointment_id', appt.id);
+      if (apptSvcs) {
+        svcIds = apptSvcs.map((s: any) => s.service_id);
+      }
+    }
+
     setForm({
       client_id: appt.client_id || '',
       client_name: appt.client_name || '',
       professional_id: appt.professional_id,
-      service_ids: [],
-      starts_at: appt.starts_at.slice(0, 16),
-      ends_at: appt.ends_at.slice(0, 16),
+      service_ids: svcIds,
+      starts_at: toLocalInput(appt.starts_at),
+      ends_at: toLocalInput(appt.ends_at),
       status: appt.status,
       notes: appt.notes || '',
       advance_amount: String(appt.advance_amount || 0),
@@ -327,15 +352,31 @@ export default function AgendaPage() {
     setModal('confirm_advance');
   };
 
-  const openCloseShift = (appt: ApptRow) => {
+  const openCloseShift = async (appt: ApptRow) => {
     // Always use fresh data from appointments array
     const fresh = appointments.find(a => a.id === appt.id) || appt;
-    setSelected(fresh);
+
+    // If total_amount is 0, recalculate from appointment_services
+    let resolvedAppt = fresh;
+    if (!fresh.total_amount && salon?.id) {
+      const { data: apptSvcs } = await supabase
+        .from('appointment_services')
+        .select('price')
+        .eq('appointment_id', fresh.id);
+      if (apptSvcs && apptSvcs.length > 0) {
+        const total = apptSvcs.reduce((sum: number, s: any) => sum + (s.price || 0), 0);
+        resolvedAppt = { ...fresh, total_amount: total };
+        // Also update the appointment in the DB so it's correct going forward
+        await supabase.from('appointments').update({ total_amount: total }).eq('id', fresh.id);
+      }
+    }
+
+    setSelected(resolvedAppt);
     setCloseForm({
-      payment_method: fresh.payment_method || 'pix',
-      discount: String(fresh.discount || 0),
-      extras: String(fresh.extras || 0),
-      extras_description: fresh.extras_description || '',
+      payment_method: resolvedAppt.payment_method || 'pix',
+      discount: String(resolvedAppt.discount || 0),
+      extras: String(resolvedAppt.extras || 0),
+      extras_description: resolvedAppt.extras_description || '',
     });
     setModal('close_shift');
   };
@@ -430,6 +471,20 @@ export default function AgendaPage() {
     } else if (selected) {
       const { error: err } = await supabase.from('appointments').update(payload).eq('id', selected.id);
       if (err) { alert(`Erro: ${err.message}`); setSaving(false); return; }
+      // Update appointment_services if services changed
+      if (form.service_ids.length > 0) {
+        await supabase.from('appointment_services').delete().eq('appointment_id', selected.id);
+        const svcRows = form.service_ids.map(sid => {
+          const svc = services.find(s => s.id === sid)!;
+          return {
+            appointment_id: selected.id,
+            service_id: sid,
+            price: svc?.price || 0,
+            duration_minutes: svc?.duration_minutes || 0,
+          };
+        });
+        await supabase.from('appointment_services').insert(svcRows);
+      }
       // If advance was added/changed during edit (transaction_date = appointment date)
       const prevAdvance = selected.advance_amount || 0;
       if (advanceAmt > 0 && advanceAmt !== prevAdvance) {
@@ -776,81 +831,83 @@ export default function AgendaPage() {
         /* ════ DAY VIEW ════ */
         <div className="card overflow-hidden flex-1 flex flex-col min-h-0">
           <div ref={gridRef} className="overflow-auto flex-1">
-            {(() => {
-              const dayBh = bh[String(currentDate.getDay())];
-              const dayHours = Array.from({ length: TOTAL_HOURS }, (_, i) => i);
-
-              return dayHours.map(hour => {
+            <div className="relative">
+              {hours.map(hour => {
+                const dayBh = bh[String(currentDate.getDay())];
                 const isBusinessHour = dayBh ? (hour >= parseHour(dayBh.open) && hour < parseHour(dayBh.close)) : false;
-                const dayAppts = getApptForDay(currentDate).filter(a => {
-                  const h = new Date(a.starts_at).getHours();
-                  return h === hour;
-                });
                 return (
-                  <div key={hour} className="flex border-b border-nd-border/20">
+                  <div key={hour} className="flex border-b border-nd-border/20" style={{ height: `${SLOT_HEIGHT}px` }}>
                     <div className="w-14 shrink-0 py-3 text-right pr-3 border-r border-nd-border/30">
                       <span className="text-xs text-nd-muted">{String(hour).padStart(2, '0')}:00</span>
                     </div>
                     <div
-                      className={`flex-1 min-h-[70px] p-1.5 cursor-pointer hover:bg-nd-accent/5 transition-colors ${isBusinessHour ? 'bg-white' : 'bg-nd-surface/20'}`}
+                      className={`flex-1 cursor-pointer hover:bg-nd-accent/5 transition-colors ${isBusinessHour ? 'bg-white' : 'bg-nd-surface/20'}`}
                       onClick={() => openCreateAt(currentDate, hour)}
-                    >
-                      {dayAppts.map(appt => {
-                        const colors = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
-                        const isClosed = !!appt.closed_at;
-                        return (
-                          <div
-                            key={appt.id}
-                            onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
-                            className={`rounded-xl border px-4 py-3 mb-1.5 cursor-pointer hover:shadow-soft transition-shadow ${colors}`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <p className="text-sm font-semibold truncate">
-                                  {getApptDisplayName(appt)}
-                                </p>
-                                {isClosed && <Check className="w-3.5 h-3.5 text-nd-success shrink-0" />}
-                              </div>
-                              <span className="text-[11px] shrink-0 font-medium">
-                                {formatTime(appt.starts_at)} - {formatTime(appt.ends_at)}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 mt-1">
-                              {profMap[appt.professional_id] && (
-                                <p className="text-xs opacity-70 flex items-center gap-1">
-                                  <User className="w-3 h-3" /> {profMap[appt.professional_id]}
-                                </p>
-                              )}
-                              {appt.total_amount > 0 && (
-                                <p className="text-xs font-medium">{formatCurrency(appt.total_amount)}</p>
-                              )}
-                              {isClosed && appt.payment_method && (
-                                <span className="text-[10px] opacity-60">
-                                  {PAYMENT_METHODS.find(p => p.value === appt.payment_method)?.label}
-                                </span>
-                              )}
-                            </div>
-                            {!isClosed && appt.status !== 'cancelled' && (
-                              <div className="flex gap-2 mt-2">
-                                {appt.status === 'scheduled' && (
-                                  <button onClick={(e) => { e.stopPropagation(); openConfirmAdvance(appt); }}
-                                    className="text-[11px] font-medium text-blue-600 hover:underline">Confirmar</button>
-                                )}
-                                {appt.advance_amount > 0 && !isClosed && (
-                                  <span className="text-[10px] text-nd-accent">Sinal: {formatCurrency(appt.advance_amount)}</span>
-                                )}
-                                <button onClick={(e) => { e.stopPropagation(); openCloseShift(appt); }}
-                                  className="text-[11px] font-medium text-nd-success hover:underline">Fechar Turno</button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    />
                   </div>
                 );
-              });
-            })()}
+              })}
+
+              {/* Absolutely positioned appointments */}
+              {getApptForDay(currentDate).map(appt => {
+                const style = getApptStyle(appt);
+                const colors = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
+                const isClosed = !!appt.closed_at;
+                return (
+                  <div
+                    key={appt.id}
+                    onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
+                    className={`absolute rounded-xl border px-4 py-3 cursor-pointer hover:shadow-soft transition-shadow z-10 ${colors}`}
+                    style={{
+                      top: style.top,
+                      height: style.height,
+                      left: '56px',
+                      right: '4px',
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <p className="text-sm font-semibold truncate">
+                          {getApptDisplayName(appt)}
+                        </p>
+                        {isClosed && <Check className="w-3.5 h-3.5 text-nd-success shrink-0" />}
+                      </div>
+                      <span className="text-[11px] shrink-0 font-medium">
+                        {formatTime(appt.starts_at)} - {formatTime(appt.ends_at)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      {profMap[appt.professional_id] && (
+                        <p className="text-xs opacity-70 flex items-center gap-1">
+                          <User className="w-3 h-3" /> {profMap[appt.professional_id]}
+                        </p>
+                      )}
+                      {appt.total_amount > 0 && (
+                        <p className="text-xs font-medium">{formatCurrency(appt.total_amount)}</p>
+                      )}
+                      {isClosed && appt.payment_method && (
+                        <span className="text-[10px] opacity-60">
+                          {PAYMENT_METHODS.find(p => p.value === appt.payment_method)?.label}
+                        </span>
+                      )}
+                    </div>
+                    {!isClosed && appt.status !== 'cancelled' && (
+                      <div className="flex gap-2 mt-2">
+                        {appt.status === 'scheduled' && (
+                          <button onClick={(e) => { e.stopPropagation(); openConfirmAdvance(appt); }}
+                            className="text-[11px] font-medium text-blue-600 hover:underline">Confirmar</button>
+                        )}
+                        {appt.advance_amount > 0 && !isClosed && (
+                          <span className="text-[10px] text-nd-accent">Sinal: {formatCurrency(appt.advance_amount)}</span>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); openCloseShift(appt); }}
+                          className="text-[11px] font-medium text-nd-success hover:underline">Fechar Turno</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
