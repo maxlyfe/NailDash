@@ -128,33 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Step 1: Validate session with getUser() (forces server-side token check + refresh)
-    const init = async () => {
-      try {
-        const { data: { user: validUser }, error } = await supabase.auth.getUser();
-
-        if (cancelled) return;
-
-        if (error || !validUser) {
-          // No valid session — stop loading, user will be redirected by middleware
-          setUser(null);
-          setSalon(null);
-          setLoading(false);
-          return;
-        }
-
-        setUser(validUser);
-        await fetchSalon(validUser);
-        if (!cancelled) setLoading(false);
-      } catch (err) {
-        console.error('Auth init error:', err);
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    init();
-
-    // Step 2: Listen for auth changes (SIGNED_IN after OAuth, TOKEN_REFRESHED for session renewal)
+    // Single entry point: onAuthStateChange handles ALL auth events including INITIAL_SESSION
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
         if (cancelled) return;
@@ -176,18 +150,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(sessionUser);
 
-        // On SIGNED_IN (fresh login), always retry salon fetch
+        // On SIGNED_IN (fresh login), always reset and retry
         if (event === 'SIGNED_IN') {
           salonFoundRef.current = false;
           fetchingRef.current = false;
-          await fetchSalon(sessionUser);
-          if (!cancelled) setLoading(false);
         }
 
-        // On TOKEN_REFRESHED, retry salon fetch if it failed previously
-        if (event === 'TOKEN_REFRESHED' && !salonFoundRef.current) {
+        // For ANY event with a valid user, fetch salon if not loaded yet
+        if (!salonFoundRef.current) {
           fetchingRef.current = false;
           await fetchSalon(sessionUser);
+          if (!cancelled) setLoading(false);
+        } else {
+          // Salon already loaded, just stop loading
           if (!cancelled) setLoading(false);
         }
       }
