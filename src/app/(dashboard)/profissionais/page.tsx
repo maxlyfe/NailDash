@@ -18,7 +18,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export default function ProfissionaisPage() {
-  const { salon, loading: authLoading } = useAuth();
+  const { salon } = useAuth();
   const supabase = useSupabase();
 
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -33,10 +33,7 @@ export default function ProfissionaisPage() {
   });
 
   const fetchData = useCallback(async () => {
-    if (!salon) {
-      if (!authLoading) setLoading(false);
-      return;
-    }
+    if (!salon?.id) return;
     setLoading(true);
     const { data } = await supabase
       .from('professionals')
@@ -45,7 +42,7 @@ export default function ProfissionaisPage() {
       .order('name');
     setProfessionals(data || []);
     setLoading(false);
-  }, [salon?.id, authLoading]);
+  }, [salon?.id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

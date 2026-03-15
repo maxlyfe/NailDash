@@ -12,7 +12,7 @@ import {
 type ModalMode = 'closed' | 'create' | 'edit';
 
 export default function ServicosPage() {
-  const { salon, loading: authLoading } = useAuth();
+  const { salon } = useAuth();
   const supabase = useSupabase();
 
   const [services, setServices] = useState<Service[]>([]);
@@ -29,10 +29,7 @@ export default function ServicosPage() {
   });
 
   const fetchData = useCallback(async () => {
-    if (!salon) {
-      if (!authLoading) setLoading(false);
-      return;
-    }
+    if (!salon?.id) return;
     setLoading(true);
     const [svcRes, catRes] = await Promise.all([
       supabase.from('services').select('*, category:service_categories(*)').eq('salon_id', salon.id).order('name'),
@@ -41,7 +38,7 @@ export default function ServicosPage() {
     setServices(svcRes.data || []);
     setCategories(catRes.data || []);
     setLoading(false);
-  }, [salon?.id, authLoading]);
+  }, [salon?.id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

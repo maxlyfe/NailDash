@@ -106,10 +106,7 @@ export default function FinanceiroPage() {
   };
 
   const fetchData = useCallback(async () => {
-    if (!salon?.id) {
-      if (!authLoading) setLoading(false);
-      return;
-    }
+    if (!salon?.id) return; // Wait for salon — don't show zeros
     setLoading(true);
     try {
       // Load transactions WITHOUT joins first (fast) — names loaded on demand
@@ -151,7 +148,7 @@ export default function FinanceiroPage() {
       console.error(e);
     }
     setLoading(false);
-  }, [salon?.id, monthDate, authLoading]);
+  }, [salon?.id, monthDate]);
 
   // Lazy-load client/professional names only when viewing receitas/despesas tabs
   const [namesLoaded, setNamesLoaded] = useState(false);

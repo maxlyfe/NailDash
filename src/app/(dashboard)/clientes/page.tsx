@@ -12,7 +12,7 @@ import {
 type ModalMode = 'closed' | 'create' | 'edit' | 'view';
 
 export default function ClientesPage() {
-  const { salon, loading: authLoading } = useAuth();
+  const { salon } = useAuth();
   const supabase = useSupabase();
 
   const [clients, setClients] = useState<Client[]>([]);
@@ -26,10 +26,7 @@ export default function ClientesPage() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '' });
 
   const fetchClients = useCallback(async () => {
-    if (!salon) {
-      if (!authLoading) setLoading(false);
-      return;
-    }
+    if (!salon?.id) return;
     setLoading(true);
     const { data } = await supabase
       .from('clients')
@@ -38,7 +35,7 @@ export default function ClientesPage() {
       .order('name');
     setClients(data || []);
     setLoading(false);
-  }, [salon?.id, authLoading]);
+  }, [salon?.id]);
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 

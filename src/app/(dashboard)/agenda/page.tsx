@@ -209,10 +209,7 @@ export default function AgendaPage() {
 
   // Fetch appointments
   const fetchAppointments = useCallback(async () => {
-    if (!salon?.id) {
-      if (!authLoading) setLoading(false);
-      return;
-    }
+    if (!salon?.id) return; // Wait for salon — don't show empty state
     setLoading(true);
     const rangeStart = viewMode === 'week'
       ? `${toDateStr(weekStart)}T00:00:00`
@@ -232,7 +229,7 @@ export default function AgendaPage() {
 
     setAppointments(data || []);
     setLoading(false);
-  }, [salon?.id, viewMode, toDateStr(weekStart), toDateStr(currentDate), authLoading]);
+  }, [salon?.id, viewMode, toDateStr(weekStart), toDateStr(currentDate)]);
 
   useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
 

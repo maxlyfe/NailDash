@@ -48,10 +48,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
-    if (!salon) {
-      if (!authLoading) setLoading(false);
-      return;
-    }
+    if (!salon?.id) return; // Wait for salon — don't show zeros
     setLoading(true);
 
     const todayStart = new Date();
@@ -106,7 +103,7 @@ export default function DashboardPage() {
     });
     setRecent((recentRes.data || []) as unknown as RecentTransaction[]);
     setLoading(false);
-  }, [salon?.id, authLoading]);
+  }, [salon?.id]);
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 

@@ -21,7 +21,7 @@ const DEFAULT_HOURS: BusinessHours = {
 };
 
 export default function ConfiguracoesPage() {
-  const { salon, loading: authLoading } = useAuth();
+  const { salon } = useAuth();
   const supabase = useSupabase();
 
   const [hours, setHours] = useState<BusinessHours>(DEFAULT_HOURS);
@@ -30,15 +30,12 @@ export default function ConfiguracoesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!salon) {
-      if (!authLoading) setLoading(false);
-      return;
-    }
+    if (!salon?.id) return;
     if (salon.business_hours) {
       setHours(salon.business_hours as BusinessHours);
     }
     setLoading(false);
-  }, [salon?.id, authLoading]);
+  }, [salon?.id]);
 
   const toggleDay = (day: string) => {
     setHours(h => ({
