@@ -128,6 +128,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    // Clean up OAuth code from URL to prevent stale code re-exchange on reload
+    // The Supabase client constructor already captured the code, so this is safe
+    if (typeof window !== 'undefined' && window.location.search.includes('code=')) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('code');
+      window.history.replaceState({}, '', url.pathname + url.search);
+    }
+
     // Single entry point: onAuthStateChange handles ALL auth events including INITIAL_SESSION
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
@@ -140,10 +148,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSalon(null);
           salonFoundRef.current = false;
           fetchingRef.current = false;
-          // Don't stop loading if OAuth code exchange is pending
-          if (event === 'INITIAL_SESSION' && typeof window !== 'undefined' && window.location.search.includes('code=')) {
-            return;
-          }
           setLoading(false);
           return;
         }
