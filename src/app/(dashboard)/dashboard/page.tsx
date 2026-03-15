@@ -30,8 +30,15 @@ type RecentTransaction = {
 export default function DashboardPage() {
   const { user, salon, loading: authLoading } = useAuth();
   const supabase = useSupabase();
-  const greeting = getGreeting();
   const firstName = user?.user_metadata?.full_name?.split(' ')[0] || '';
+
+  const [greeting, setGreeting] = useState('');
+  const [dateStr, setDateStr] = useState('');
+
+  useEffect(() => {
+    setGreeting(getGreeting());
+    setDateStr(new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }));
+  }, []);
 
   const [stats, setStats] = useState<Stats>({
     revenueToday: 0, totalClients: 0, avgTicket: 0,
@@ -123,7 +130,7 @@ export default function DashboardPage() {
           {greeting}{firstName ? `, ${firstName}` : ''} <span className="text-lg">&#10024;</span>
         </h1>
         <p className="text-nd-muted text-sm mt-1">
-          {salon?.name || '...'} &middot; {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {salon?.name || '...'} &middot; {dateStr}
         </p>
       </div>
 

@@ -34,22 +34,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = createClient();
 
   useEffect(() => {
-    const fetchSalon = async (userId: string) => {
+    const fetchOrCreateSalon = async (u: User) => {
+      // Try to find salon owned by this user
       const { data: owned } = await supabase
         .from('salons')
         .select('id, name, owner_id, business_hours')
-        .eq('owner_id', userId)
+        .eq('owner_id', u.id)
         .limit(1)
         .single();
       if (owned) {
         setSalon(owned);
-      } else {
-        const { data: any } = await supabase
-          .from('salons')
-          .select('id, name, owner_id, business_hours')
-          .limit(1)
-          .single();
-        setSalon(any);
+        return;
+      }
+
+      // Fallback: any salon visible via RLS
+      const { data: visible } = await supabase
+        .from('salons')
+        .select('id, name, owner_id, business_hours')
+        .limit(1)
+        .single();
+      if (visible) {
+        setSalon(visible);
+        return;
+      }
+
+      // No salon found — auto-create for new user
+      const displayName = u.user_metadata?.full_name || u.email?.split('@')[0] || 'Meu Salão';
+      const { data: created } = await supabase
+        .from('salons')
+        .insert({
+          owner_id: u.id,
+          name: `Salão de ${displayName}`,
+          business_hours: {
+            segunda: { open: '08:00', close: '18:00' },
+            terca: { open: '08:00', close: '18:00' },
+            quarta: { open: '08:00', close: '18:00' },
+            quinta: { open: '08:00', close: '18:00' },
+            sexta: { open: '08:00', close: '18:00' },
+            sabado: { open: '08:00', close: '14:00' },
+            domingo: null,
+          },
+        })
+        .select('id, name, owner_id, business_hours')
+        .single();
+      if (created) {
+        setSalon(created);
       }
     };
 
@@ -58,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       setUser(currentUser);
       if (currentUser) {
-        await fetchSalon(currentUser.id);
+        await fetchOrCreateSalon(currentUser);
       }
       setLoading(false);
     };
@@ -72,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (sessionUser) {
           // Only re-fetch salon on sign-in (not on every token refresh)
           if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-            await fetchSalon(sessionUser.id);
+            await fetchOrCreateSalon(sessionUser);
           }
         } else {
           setSalon(null);
