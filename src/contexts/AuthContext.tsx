@@ -11,6 +11,7 @@ type Salon = {
   name: string;
   owner_id: string;
   business_hours: BusinessHours | null;
+  locale: string | null;
 };
 
 type AuthContextType = {
@@ -94,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 1. Salon owned by user
         const { data: owned, error: ownedErr } = await supabase
           .from('salons')
-          .select('id, name, owner_id, business_hours')
+          .select('id, name, owner_id, business_hours, locale')
           .eq('owner_id', user.id)
           .limit(1)
           .maybeSingle();
@@ -112,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 2. Any salon visible via RLS
         const { data: visible, error: visibleErr } = await supabase
           .from('salons')
-          .select('id, name, owner_id, business_hours')
+          .select('id, name, owner_id, business_hours, locale')
           .limit(1)
           .maybeSingle();
 
@@ -144,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               domingo: null,
             },
           })
-          .select('id, name, owner_id, business_hours')
+          .select('id, name, owner_id, business_hours, locale')
           .single();
 
         console.log('[Auth] create result:', { created: !!created, error: createErr?.message });

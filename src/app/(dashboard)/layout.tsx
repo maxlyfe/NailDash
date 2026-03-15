@@ -1,6 +1,7 @@
 import { AuthProvider } from '@/contexts/AuthContext';
 import Sidebar from '@/components/layout/Sidebar';
 import MobileHeader from '@/components/layout/MobileHeader';
+import { LocaleSync } from './LocaleSync';
 
 export default function DashboardLayout({
   children,
@@ -9,6 +10,7 @@ export default function DashboardLayout({
 }) {
   return (
     <AuthProvider>
+      <LocaleSync />
       <div className="min-h-screen bg-nd-bg bg-pattern">
         <div className="warm-glow fixed inset-0 pointer-events-none" />
         <Sidebar />
