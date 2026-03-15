@@ -26,6 +26,8 @@ type TxRow = {
   category: string | null;
   installment_number: number | null;
   installment_total: number | null;
+  client_id?: string | null;
+  professional_id?: string | null;
   client?: any;
   professional?: any;
 };
@@ -110,32 +112,27 @@ export default function FinanceiroPage() {
     }
     setLoading(true);
     try {
+      // Load transactions WITHOUT joins first (fast) — names loaded on demand
       const [txRes, closingRes, prevClosingRes, nextAdvRes] = await Promise.all([
-        // Current month transactions
         supabase
           .from('transactions')
-          .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total, client:clients(name), professional:professionals(name)')
+          .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total, client_id, professional_id')
           .eq('salon_id', salon.id)
           .gte('transaction_date', `${monthStart}T00:00:00`)
           .lte('transaction_date', `${monthEndDate}T23:59:59`)
           .order('transaction_date', { ascending: false }),
-        // Current month closing
         supabase
           .from('monthly_closings')
           .select('*')
           .eq('salon_id', salon.id)
           .eq('month', monthStart)
           .maybeSingle(),
-        // Previous month closing (for auto-fill fundo de caixa)
         supabase
           .from('monthly_closings')
           .select('*')
           .eq('salon_id', salon.id)
           .eq('month', prevMonthStart)
           .maybeSingle(),
-        // Advances with transaction_date in next month (money in bank but future)
-        // These are adiantamento transactions where registered_at is in current month
-        // but transaction_date is in next month
         supabase
           .from('transactions')
           .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total')
@@ -155,6 +152,32 @@ export default function FinanceiroPage() {
     }
     setLoading(false);
   }, [salon?.id, monthDate, authLoading]);
+
+  // Lazy-load client/professional names only when viewing receitas/despesas tabs
+  const [namesLoaded, setNamesLoaded] = useState(false);
+  useEffect(() => {
+    if ((tab !== 'receitas' && tab !== 'despesas') || namesLoaded || !salon?.id || transactions.length === 0) return;
+    const loadNames = async () => {
+      const txWithJoins = await supabase
+        .from('transactions')
+        .select('id, client:clients(name), professional:professionals(name)')
+        .eq('salon_id', salon.id)
+        .gte('transaction_date', `${monthStart}T00:00:00`)
+        .lte('transaction_date', `${monthEndDate}T23:59:59`);
+      if (txWithJoins.data) {
+        const nameMap = new Map<string, { client: any; professional: any }>(txWithJoins.data.map((t: any) => [t.id, { client: t.client, professional: t.professional }]));
+        setTransactions(prev => prev.map(tx => {
+          const names = nameMap.get(tx.id);
+          return names ? { ...tx, client: names.client, professional: names.professional } : tx;
+        }));
+        setNamesLoaded(true);
+      }
+    };
+    loadNames();
+  }, [tab, namesLoaded, salon?.id, transactions.length]);
+
+  // Reset namesLoaded when month changes
+  useEffect(() => { setNamesLoaded(false); }, [monthDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
