@@ -143,6 +143,8 @@ export default function AgendaPage() {
     ends_at: '',
     status: 'scheduled',
     notes: '',
+    advance_amount: '0',
+    advance_payment_method: 'pix',
   });
 
   // Advance (confirmation) form
@@ -287,6 +289,7 @@ export default function AgendaPage() {
       starts_at: `${ds}T${h}:00`,
       ends_at: `${ds}T${String(Math.min(hour + 1, 23)).padStart(2, '0')}:00`,
       status: 'scheduled', notes: '',
+      advance_amount: '0', advance_payment_method: 'pix',
     });
     setClientSearch('');
     setServiceSearch('');
@@ -304,6 +307,8 @@ export default function AgendaPage() {
       ends_at: appt.ends_at.slice(0, 16),
       status: appt.status,
       notes: appt.notes || '',
+      advance_amount: String(appt.advance_amount || 0),
+      advance_payment_method: appt.advance_payment_method || 'pix',
     });
     setClientSearch(appt.client_id ? (clientMap[appt.client_id] || '') : (appt.client_name || ''));
     setServiceSearch('');
@@ -312,21 +317,25 @@ export default function AgendaPage() {
   };
 
   const openConfirmAdvance = (appt: ApptRow) => {
-    setSelected(appt);
+    // Always use fresh data from appointments array
+    const fresh = appointments.find(a => a.id === appt.id) || appt;
+    setSelected(fresh);
     setAdvanceForm({
-      amount: String(appt.advance_amount || 0),
-      payment_method: appt.advance_payment_method || 'pix',
+      amount: String(fresh.advance_amount || 0),
+      payment_method: fresh.advance_payment_method || 'pix',
     });
     setModal('confirm_advance');
   };
 
   const openCloseShift = (appt: ApptRow) => {
-    setSelected(appt);
+    // Always use fresh data from appointments array
+    const fresh = appointments.find(a => a.id === appt.id) || appt;
+    setSelected(fresh);
     setCloseForm({
-      payment_method: appt.payment_method || 'pix',
-      discount: String(appt.discount || 0),
-      extras: String(appt.extras || 0),
-      extras_description: appt.extras_description || '',
+      payment_method: fresh.payment_method || 'pix',
+      discount: String(fresh.discount || 0),
+      extras: String(fresh.extras || 0),
+      extras_description: fresh.extras_description || '',
     });
     setModal('close_shift');
   };
@@ -336,6 +345,7 @@ export default function AgendaPage() {
     if (!form.client_id && !form.client_name.trim()) return;
     setSaving(true);
 
+    const advanceAmt = parseFloat(form.advance_amount) || 0;
     const payload: Record<string, unknown> = {
       salon_id: salon.id,
       client_id: form.client_id || null,
@@ -357,21 +367,37 @@ export default function AgendaPage() {
       payload.total_amount = total;
     }
 
+    // Include advance data
+    if (modal === 'create' && advanceAmt > 0) {
+      payload.advance_amount = advanceAmt;
+      payload.advance_payment_method = form.advance_payment_method;
+      payload.advance_paid_at = new Date().toISOString();
+      payload.status = 'confirmed';
+    } else if (modal === 'edit' && selected) {
+      // On edit, update advance if changed
+      const prevAdvance = selected.advance_amount || 0;
+      if (advanceAmt !== prevAdvance) {
+        payload.advance_amount = advanceAmt;
+        payload.advance_payment_method = advanceAmt > 0 ? form.advance_payment_method : null;
+        payload.advance_paid_at = advanceAmt > 0 ? new Date().toISOString() : null;
+      }
+    }
+
     if (modal === 'create') {
       const { error: err } = await supabase.from('appointments').insert(payload);
       if (err) { alert(`Erro: ${err.message}`); setSaving(false); return; }
-      // Insert appointment_services
-      if (form.service_ids.length > 0) {
-        const { data: newAppt } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('salon_id', salon.id)
-          .eq('starts_at', payload.starts_at)
-          .eq('professional_id', payload.professional_id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-        if (newAppt) {
+      // Insert appointment_services + advance transaction
+      const { data: newAppt } = await supabase
+        .from('appointments')
+        .select('id')
+        .eq('salon_id', salon.id)
+        .eq('starts_at', payload.starts_at)
+        .eq('professional_id', payload.professional_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (newAppt) {
+        if (form.service_ids.length > 0) {
           const svcRows = form.service_ids.map(sid => {
             const svc = services.find(s => s.id === sid)!;
             return {
@@ -383,10 +409,45 @@ export default function AgendaPage() {
           });
           await supabase.from('appointment_services').insert(svcRows);
         }
+        // Create advance transaction (transaction_date = appointment date, not today)
+        if (advanceAmt > 0) {
+          await supabase.from('transactions').insert({
+            salon_id: salon.id,
+            type: 'sale',
+            appointment_id: newAppt.id,
+            client_id: form.client_id || null,
+            professional_id: form.professional_id,
+            description: `Adiantamento: ${form.client_name.trim() || 'Cliente'}`,
+            total_amount: advanceAmt,
+            service_price: 0, discount: 0, tax: 0, tips: 0,
+            category: 'adiantamento',
+            [`payment_${form.advance_payment_method}`]: advanceAmt,
+            transaction_date: new Date(form.starts_at).toISOString(),
+            registered_at: new Date().toISOString(),
+          });
+        }
       }
     } else if (selected) {
       const { error: err } = await supabase.from('appointments').update(payload).eq('id', selected.id);
       if (err) { alert(`Erro: ${err.message}`); setSaving(false); return; }
+      // If advance was added/changed during edit (transaction_date = appointment date)
+      const prevAdvance = selected.advance_amount || 0;
+      if (advanceAmt > 0 && advanceAmt !== prevAdvance) {
+        await supabase.from('transactions').insert({
+          salon_id: salon.id,
+          type: 'sale',
+          appointment_id: selected.id,
+          client_id: form.client_id || null,
+          professional_id: form.professional_id,
+          description: `Adiantamento: ${getApptDisplayName(selected)}`,
+          total_amount: advanceAmt,
+          service_price: 0, discount: 0, tax: 0, tips: 0,
+          category: 'adiantamento',
+          [`payment_${form.advance_payment_method}`]: advanceAmt,
+          transaction_date: new Date(form.starts_at).toISOString(),
+          registered_at: new Date().toISOString(),
+        });
+      }
     }
 
     setModal('closed');
@@ -409,7 +470,7 @@ export default function AgendaPage() {
     const { error: err } = await supabase.from('appointments').update(updateData).eq('id', selected.id);
     if (err) { alert(`Erro: ${err.message}`); setSaving(false); return; }
 
-    // Register advance as transaction (with category 'adiantamento')
+    // Register advance as transaction (transaction_date = appointment date, not today)
     if (amount > 0) {
       await supabase.from('transactions').insert({
         salon_id: salon.id,
@@ -425,7 +486,7 @@ export default function AgendaPage() {
         tips: 0,
         category: 'adiantamento',
         [`payment_${advanceForm.payment_method}`]: amount,
-        transaction_date: new Date().toISOString(),
+        transaction_date: new Date(selected.starts_at).toISOString(),
         registered_at: new Date().toISOString(),
       });
     }
@@ -795,11 +856,22 @@ export default function AgendaPage() {
       )}
 
       {/* ════ CREATE/EDIT MODAL ════ */}
-      {(modal === 'create' || modal === 'edit') && (
+      {(modal === 'create' || modal === 'edit') && (() => {
+        const formDate = form.starts_at ? new Date(form.starts_at) : new Date();
+        const formDateLabel = formDate.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric', weekday: 'long' });
+        const totalDuration = form.service_ids.reduce((sum, id) => {
+          const svc = services.find(s => s.id === id);
+          return sum + (svc?.duration_minutes || 0);
+        }, 0) || 60;
+        const hasAdvance = parseFloat(form.advance_amount) > 0;
+        const advAmt = parseFloat(form.advance_amount) || 0;
+
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setModal('closed')} />
-          <div className="relative bg-nd-card rounded-2xl border border-nd-border shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/50">
+          <div className="relative bg-nd-card rounded-2xl border border-nd-border shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/30 shrink-0">
               <h2 className="text-base font-semibold text-nd-heading">
                 {modal === 'create' ? 'Novo Agendamento' : 'Editar Agendamento'}
               </h2>
@@ -809,168 +881,242 @@ export default function AgendaPage() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              {/* Client search */}
-              <div ref={clientRef} className="relative">
-                <label className="section-label mb-1.5 block">Cliente *</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-nd-muted" />
-                  <input
-                    type="text"
-                    value={clientSearch}
-                    onChange={e => handleClientSearchChange(e.target.value)}
-                    onFocus={() => setShowClientDropdown(true)}
-                    placeholder="Buscar cliente ou digitar nome..."
-                    className="input-field !pl-9"
-                    autoFocus
-                  />
-                </div>
-                {form.client_id && (
-                  <p className="text-[10px] text-nd-success mt-1">Cliente cadastrado selecionado</p>
-                )}
-                {!form.client_id && clientSearch.trim() && (
-                  <p className="text-[10px] text-nd-accent mt-1">Cliente avulso: &quot;{clientSearch.trim()}&quot;</p>
-                )}
-                {showClientDropdown && (
-                  <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white rounded-xl border border-nd-border shadow-lg max-h-48 overflow-y-auto">
+            <div className="overflow-y-auto flex-1">
+              <div className="flex flex-col md:flex-row">
+                {/* Left: Client search */}
+                <div ref={clientRef} className="md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-nd-border/20 p-5">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-nd-muted" />
+                    <input
+                      type="text"
+                      value={clientSearch}
+                      onChange={e => handleClientSearchChange(e.target.value)}
+                      onFocus={() => setShowClientDropdown(true)}
+                      placeholder="Buscar cliente..."
+                      className="input-field !pl-9 !bg-nd-surface/50"
+                      autoFocus
+                    />
+                  </div>
+                  {form.client_id && (
+                    <p className="text-[10px] text-nd-success mt-1.5 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Cliente cadastrado
+                    </p>
+                  )}
+                  {!form.client_id && clientSearch.trim() && (
+                    <p className="text-[10px] text-nd-accent mt-1.5">Cliente avulso: &quot;{clientSearch.trim()}&quot;</p>
+                  )}
+                  <div className="mt-2 bg-white rounded-xl border border-nd-border/50 shadow-sm max-h-52 overflow-y-auto">
                     {filteredClients.length === 0 ? (
-                      <p className="px-3 py-2 text-xs text-nd-muted">
-                        {clientSearch.trim() ? `Nenhum cadastrado. Será criado como "${clientSearch.trim()}"` : 'Nenhum cliente cadastrado'}
+                      <p className="px-3 py-3 text-xs text-nd-muted text-center">
+                        {clientSearch.trim() ? `Nenhum encontrado` : 'Nenhum cliente cadastrado'}
                       </p>
                     ) : (
                       filteredClients.map(c => (
                         <button
                           key={c.id}
                           onClick={() => selectClient(c)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-nd-surface transition-colors flex items-center gap-2"
+                          className={`w-full text-left px-3 py-2.5 text-sm hover:bg-nd-surface/50 transition-colors flex items-center gap-2.5 border-b border-nd-border/10 last:border-0 ${
+                            form.client_id === c.id ? 'bg-nd-accent/5' : ''
+                          }`}
                         >
-                          <div className="w-6 h-6 rounded-lg bg-nd-accent/10 flex items-center justify-center shrink-0">
-                            <span className="text-[10px] font-bold text-nd-accent">{c.name[0]}</span>
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                            form.client_id === c.id ? 'bg-nd-accent/20' : 'bg-nd-accent/10'
+                          }`}>
+                            <span className="text-[11px] font-bold text-nd-accent">{c.name[0]}</span>
                           </div>
-                          {c.name}
+                          <span className="truncate">{c.name}</span>
+                          {form.client_id === c.id && <Check className="w-3.5 h-3.5 text-nd-accent shrink-0 ml-auto" />}
                         </button>
                       ))
                     )}
                   </div>
-                )}
-              </div>
-
-              {/* Professional */}
-              <div>
-                <label className="section-label mb-1.5 block">Profissional *</label>
-                <select value={form.professional_id}
-                  onChange={e => setForm(f => ({ ...f, professional_id: e.target.value }))}
-                  className="input-field">
-                  <option value="">Selecione...</option>
-                  {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-
-              {/* Time */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="section-label mb-1.5 block">Início *</label>
-                  <input type="datetime-local" value={form.starts_at}
-                    onChange={e => {
-                      const newStart = e.target.value;
-                      setForm(f => ({ ...f, starts_at: newStart, ends_at: calcEndTime(newStart, f.service_ids) || f.ends_at }));
-                    }}
-                    className="input-field" />
                 </div>
-                <div>
-                  <label className="section-label mb-1.5 block">Término</label>
-                  <input type="datetime-local" value={form.ends_at}
-                    onChange={e => setForm(f => ({ ...f, ends_at: e.target.value }))}
-                    className="input-field" />
-                </div>
-              </div>
 
-              {/* Services with search */}
-              {services.length > 0 && (
-                <div>
-                  <label className="section-label mb-1.5 block">
-                    Serviços {form.service_ids.length > 0 && <span className="text-nd-accent font-normal">({form.service_ids.length} · {formatCurrency(selectedServicesTotal)})</span>}
-                  </label>
-                  <div className="relative mb-2">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-nd-muted" />
-                    <input
-                      type="text"
-                      value={serviceSearch}
-                      onChange={e => setServiceSearch(e.target.value)}
-                      placeholder="Buscar serviço..."
-                      className="input-field !pl-8 !py-2 text-sm"
-                    />
+                {/* Right: Form */}
+                <div className="flex-1 p-5 space-y-5">
+                  {/* Date label */}
+                  <p className="text-sm font-semibold text-nd-heading capitalize">{formDateLabel}</p>
+
+                  {/* Time + Services row */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Hora de início</label>
+                      <input type="datetime-local" value={form.starts_at}
+                        onChange={e => {
+                          const newStart = e.target.value;
+                          setForm(f => ({ ...f, starts_at: newStart, ends_at: calcEndTime(newStart, f.service_ids) || f.ends_at }));
+                        }}
+                        className="input-field !bg-nd-surface/30 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Profissional</label>
+                      <select value={form.professional_id}
+                        onChange={e => setForm(f => ({ ...f, professional_id: e.target.value }))}
+                        className="input-field !bg-nd-surface/30 text-sm">
+                        <option value="">Selecione...</option>
+                        {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
                   </div>
-                  <div className="space-y-1 max-h-36 overflow-y-auto p-1.5 rounded-xl bg-nd-surface/50 border border-nd-border/30">
-                    {filteredServices.map(svc => (
-                      <label key={svc.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/50 cursor-pointer">
-                        <input type="checkbox" checked={form.service_ids.includes(svc.id)}
-                          onChange={() => toggleService(svc.id)}
-                          className="w-4 h-4 rounded border-nd-border text-nd-accent focus:ring-nd-accent/20" />
-                        <span className="text-sm text-nd-text flex-1 truncate">{svc.name}</span>
-                        <span className="text-xs text-nd-muted shrink-0">
-                          {formatCurrency(svc.price)} · {svc.duration_minutes}min
-                        </span>
-                      </label>
-                    ))}
-                    {filteredServices.length === 0 && (
-                      <p className="text-xs text-nd-muted text-center py-2">Nenhum serviço encontrado</p>
+
+                  {/* Services */}
+                  {services.length > 0 && (
+                    <div>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Serviços</label>
+                      <div className="relative mb-2">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-nd-muted" />
+                        <input
+                          type="text"
+                          value={serviceSearch}
+                          onChange={e => setServiceSearch(e.target.value)}
+                          placeholder="Buscar serviço..."
+                          className="input-field !pl-8 !py-2 text-sm !bg-nd-surface/30"
+                        />
+                      </div>
+                      <div className="space-y-0.5 max-h-32 overflow-y-auto rounded-xl bg-nd-surface/30 border border-nd-border/20 p-1">
+                        {filteredServices.map(svc => (
+                          <label key={svc.id} className="flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-white/60 cursor-pointer transition-colors">
+                            <input type="checkbox" checked={form.service_ids.includes(svc.id)}
+                              onChange={() => toggleService(svc.id)}
+                              className="w-3.5 h-3.5 rounded border-nd-border text-nd-accent focus:ring-nd-accent/20" />
+                            <span className="text-sm text-nd-text flex-1 truncate">{svc.name}</span>
+                            <span className="text-[11px] text-nd-muted shrink-0">
+                              {formatCurrency(svc.price)} · {svc.duration_minutes}min
+                            </span>
+                          </label>
+                        ))}
+                        {filteredServices.length === 0 && (
+                          <p className="text-xs text-nd-muted text-center py-2">Nenhum serviço encontrado</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Duration + End time + Total */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Término</label>
+                      <input type="datetime-local" value={form.ends_at}
+                        onChange={e => setForm(f => ({ ...f, ends_at: e.target.value }))}
+                        className="input-field !bg-nd-surface/30 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Duração</label>
+                      <div className="flex items-center gap-2 h-[42px] px-3 rounded-xl bg-nd-surface/30 border border-nd-border/20 text-sm text-nd-muted">
+                        <Clock className="w-4 h-4" />
+                        <span>{totalDuration} min</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-nd-accent/5 border border-nd-accent/15">
+                    <span className="text-sm font-medium text-nd-heading">Total</span>
+                    <span className="text-lg font-bold text-nd-accent">
+                      {formatCurrency(selectedServicesTotal)}
+                    </span>
+                  </div>
+
+                  {/* ── Depósito / Adiantamento ── */}
+                  <div className="border-t border-nd-border/20 pt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium">Depósito / Sinal</label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] text-nd-muted mb-1 block">Valor (R$)</label>
+                        <input type="number" value={form.advance_amount}
+                          onChange={e => setForm(f => ({ ...f, advance_amount: e.target.value }))}
+                          min="0" step="0.01" placeholder="0,00"
+                          className="input-field !bg-nd-surface/30 text-sm font-semibold" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-nd-muted mb-1 block">Método de pagamento</label>
+                        <select value={form.advance_payment_method}
+                          onChange={e => setForm(f => ({ ...f, advance_payment_method: e.target.value }))}
+                          className="input-field !bg-nd-surface/30 text-sm"
+                          disabled={!hasAdvance}
+                        >
+                          {PAYMENT_METHODS.map(pm => (
+                            <option key={pm.value} value={pm.value}>{pm.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {hasAdvance && (
+                      <p className="text-[10px] text-nd-accent mt-1.5">
+                        Sinal de {formatCurrency(advAmt)} será registrado como garantia
+                      </p>
                     )}
                   </div>
-                </div>
-              )}
 
-              {/* Status (edit only) */}
-              {modal === 'edit' && (
-                <div>
-                  <label className="section-label mb-1.5 block">Status</label>
-                  <select value={form.status}
-                    onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                    className="input-field">
-                    <option value="scheduled">Agendado</option>
-                    <option value="confirmed">Confirmado</option>
-                    <option value="in_progress">Em andamento</option>
-                    <option value="completed">Concluído</option>
-                    <option value="cancelled">Cancelado</option>
-                    <option value="no_show">Não compareceu</option>
-                  </select>
-                </div>
-              )}
+                  {/* Status (edit only) */}
+                  {modal === 'edit' && (
+                    <div className="border-t border-nd-border/20 pt-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Status</label>
+                          <select value={form.status}
+                            onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                            className="input-field !bg-nd-surface/30 text-sm">
+                            <option value="scheduled">Agendado</option>
+                            <option value="confirmed">Confirmado</option>
+                            <option value="in_progress">Em andamento</option>
+                            <option value="completed">Concluído</option>
+                            <option value="cancelled">Cancelado</option>
+                            <option value="no_show">Não compareceu</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Observações</label>
+                          <input type="text" value={form.notes}
+                            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                            placeholder="Observações..."
+                            className="input-field !bg-nd-surface/30 text-sm" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-              <div>
-                <label className="section-label mb-1.5 block">Observações</label>
-                <textarea value={form.notes}
-                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                  placeholder="Observações..."
-                  className="input-field resize-none h-16" />
+                  {modal === 'create' && (
+                    <div>
+                      <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">Observações</label>
+                      <input type="text" value={form.notes}
+                        onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                        placeholder="Observações..."
+                        className="input-field !bg-nd-surface/30 text-sm" />
+                    </div>
+                  )}
+                </div>
               </div>
+            </div>
 
-              <div className="flex gap-3 pt-2">
-                {modal === 'edit' && selected && (
-                  <>
-                    <button onClick={() => handleDelete(selected.id)} className="btn-danger text-sm">
-                      <Trash2 className="w-4 h-4" />
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-nd-border/30 flex items-center gap-3 shrink-0 bg-nd-surface/20">
+              {modal === 'edit' && selected && (
+                <>
+                  <button onClick={() => handleDelete(selected.id)} className="p-2 rounded-xl text-nd-danger hover:bg-nd-danger/10 transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                  {!selected.closed_at && selected.status !== 'cancelled' && (
+                    <button onClick={() => openCloseShift(selected)} className="btn-secondary text-sm flex items-center gap-1.5">
+                      <DollarSign className="w-4 h-4" /> Fechar Turno
                     </button>
-                    {!selected.closed_at && selected.status !== 'cancelled' && (
-                      <button onClick={() => openCloseShift(selected)} className="btn-secondary text-sm flex items-center gap-1.5">
-                        <DollarSign className="w-4 h-4" /> Fechar Turno
-                      </button>
-                    )}
-                  </>
-                )}
-                <div className="flex-1" />
-                <button onClick={() => setModal('closed')} className="btn-secondary text-sm">Cancelar</button>
-                <button onClick={handleSave}
-                  disabled={saving || (!form.client_id && !form.client_name.trim()) || !form.professional_id}
-                  className="btn-primary text-sm">
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  {modal === 'create' ? 'Agendar' : 'Salvar'}
-                </button>
-              </div>
+                  )}
+                </>
+              )}
+              <div className="flex-1" />
+              <button onClick={() => setModal('closed')} className="btn-ghost text-sm px-4 py-2">Cancelar</button>
+              <button onClick={handleSave}
+                disabled={saving || (!form.client_id && !form.client_name.trim()) || !form.professional_id}
+                className="btn-primary text-sm px-6">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {modal === 'create' ? 'Agendar' : 'Salvar'}
+              </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ════ CONFIRM WITH ADVANCE MODAL ════ */}
       {modal === 'confirm_advance' && selected && (

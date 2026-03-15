@@ -9,7 +9,10 @@
       "Bash(curl -s \"https://yefkehvdtykucjajfdcs.supabase.co/rest/v1/\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllZmtlaHZkdHlrdWNqYWpmZGNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMTY1NTQsImV4cCI6MjA4ODU5MjU1NH0.mfRk1S06qVrYqgF0-asjosel9Y0IZmyTj3DtAwHloE0\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllZmtlaHZkdHlrdWNqYWpmZGNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMTY1NTQsImV4cCI6MjA4ODU5MjU1NH0.mfRk1S06qVrYqgF0-asjosel9Y0IZmyTj3DtAwHloE0\")",
       "Bash(node _inspect_schema.js)",
       "Bash(npx next:*)",
-      "Bash(ls \"C:/Users/maxly/OneDrive/Desktop/NailDash/src/app/\\(dashboard\\)/\")"
+      "Bash(ls \"C:/Users/maxly/OneDrive/Desktop/NailDash/src/app/\\(dashboard\\)/\")",
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(git add:*)"
     ]
   }
 }

@@ -4,14 +4,14 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import {
-  DollarSign, TrendingUp, TrendingDown, BarChart3, Loader2,
+  DollarSign, TrendingUp, TrendingDown, Loader2,
   Plus, X, Save, Trash2, CreditCard, Banknote, Smartphone,
-  ArrowRightLeft, Calendar, ChevronLeft, ChevronRight,
-  Wallet, PiggyBank, UserCheck,
+  ArrowRightLeft, ChevronLeft, ChevronRight,
+  PiggyBank, UserCheck, AlertTriangle,
 } from 'lucide-react';
 
 type TabView = 'resumo' | 'receitas' | 'despesas' | 'fechamento';
-type TxModalMode = 'closed' | 'receita' | 'despesa' | 'salario' | 'adiantamento';
+type TxModalMode = 'closed' | 'receita' | 'despesa';
 
 type TxRow = {
   id: string;
@@ -47,6 +47,8 @@ export default function FinanceiroPage() {
   const [tab, setTab] = useState<TabView>('resumo');
   const [transactions, setTransactions] = useState<TxRow[]>([]);
   const [closing, setClosing] = useState<MonthlyClosing | null>(null);
+  const [prevClosing, setPrevClosing] = useState<MonthlyClosing | null>(null);
+  const [nextMonthAdvances, setNextMonthAdvances] = useState<TxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<TxModalMode>('closed');
   const [saving, setSaving] = useState(false);
@@ -70,12 +72,29 @@ export default function FinanceiroPage() {
     return `${y}-${m}-${String(d.getDate()).padStart(2, '0')}`;
   })();
 
+  // Previous month start date
+  const prevMonthStart = (() => {
+    const [y, m] = monthDate.split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  })();
+
+  // Next month date range (for advances that are in the bank but belong to next month)
+  const nextMonthRange = (() => {
+    const [y, m] = monthDate.split('-').map(Number);
+    const start = new Date(y, m, 1); // first day of next month
+    const end = new Date(y, m + 1, 0); // last day of next month
+    return {
+      start: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`,
+      end: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`,
+    };
+  })();
+
   // Form
   const [form, setForm] = useState({
     description: '', total_amount: '', category: '',
     payment_method: 'pix' as 'pix' | 'cash' | 'card' | 'transfer',
     installments: '1', transaction_date: new Date().toISOString().split('T')[0],
-    notes: '',
   });
 
   const navigateMonth = (delta: number) => {
@@ -91,7 +110,8 @@ export default function FinanceiroPage() {
     }
     setLoading(true);
     try {
-      const [txRes, closingRes] = await Promise.all([
+      const [txRes, closingRes, prevClosingRes, nextAdvRes] = await Promise.all([
+        // Current month transactions
         supabase
           .from('transactions')
           .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total, client:clients(name), professional:professionals(name)')
@@ -99,15 +119,37 @@ export default function FinanceiroPage() {
           .gte('transaction_date', `${monthStart}T00:00:00`)
           .lte('transaction_date', `${monthEndDate}T23:59:59`)
           .order('transaction_date', { ascending: false }),
+        // Current month closing
         supabase
           .from('monthly_closings')
           .select('*')
           .eq('salon_id', salon.id)
           .eq('month', monthStart)
           .maybeSingle(),
+        // Previous month closing (for auto-fill fundo de caixa)
+        supabase
+          .from('monthly_closings')
+          .select('*')
+          .eq('salon_id', salon.id)
+          .eq('month', prevMonthStart)
+          .maybeSingle(),
+        // Advances with transaction_date in next month (money in bank but future)
+        // These are adiantamento transactions where registered_at is in current month
+        // but transaction_date is in next month
+        supabase
+          .from('transactions')
+          .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total')
+          .eq('salon_id', salon.id)
+          .eq('category', 'adiantamento')
+          .gte('transaction_date', `${nextMonthRange.start}T00:00:00`)
+          .lte('transaction_date', `${nextMonthRange.end}T23:59:59`)
+          .gte('registered_at', `${monthStart}T00:00:00`)
+          .lte('registered_at', `${monthEndDate}T23:59:59`),
       ]);
       setTransactions((txRes.data || []) as TxRow[]);
       setClosing(closingRes.data as MonthlyClosing | null);
+      setPrevClosing(prevClosingRes.data as MonthlyClosing | null);
+      setNextMonthAdvances((nextAdvRes.data || []) as TxRow[]);
     } catch (e) {
       console.error(e);
     }
@@ -119,8 +161,6 @@ export default function FinanceiroPage() {
   // Computed
   const sales = transactions.filter(t => t.type === 'sale');
   const expenses = transactions.filter(t => t.type === 'expense');
-  const salaries = transactions.filter(t => t.type === 'salary' || t.type === 'thirteenth');
-  const advances = transactions.filter(t => t.type === 'advance');
 
   const totalRevenue = sales.reduce((s, t) => s + t.total_amount, 0);
   const revenuePix = sales.reduce((s, t) => s + t.payment_pix, 0);
@@ -134,11 +174,30 @@ export default function FinanceiroPage() {
   const expenseCard = expenses.reduce((s, t) => s + t.payment_card, 0);
   const expenseTransfer = expenses.reduce((s, t) => s + t.payment_transfer, 0);
 
-  const totalSalaries = salaries.reduce((s, t) => s + t.total_amount, 0);
-  const totalAdvances = advances.reduce((s, t) => s + t.total_amount, 0);
+  // Salaries are expenses with category containing 'salario' or 'salário' or type 'salary'
+  const salaryExpenses = expenses.filter(t =>
+    t.type === 'salary' || (t.category && /sal[aá]ri/i.test(t.category))
+  );
+  const totalSalaries = salaryExpenses.reduce((s, t) => s + t.total_amount, 0);
 
-  const startingBalance = closing?.starting_balance || 0;
-  const fundoCaixa = startingBalance + totalRevenue - totalExpenses - totalSalaries;
+  // Next month advances (money physically in bank but belongs to future)
+  const totalNextAdvances = nextMonthAdvances.reduce((s, t) => s + t.total_amount, 0);
+  const nextAdvPix = nextMonthAdvances.reduce((s, t) => s + t.payment_pix, 0);
+  const nextAdvCash = nextMonthAdvances.reduce((s, t) => s + t.payment_cash, 0);
+  const nextAdvCard = nextMonthAdvances.reduce((s, t) => s + t.payment_card, 0);
+  const nextAdvTransfer = nextMonthAdvances.reduce((s, t) => s + t.payment_transfer, 0);
+
+  // Auto-calculate previous month's remaining balance
+  const prevMonthBalance = (() => {
+    if (!prevClosing) return 0;
+    // We need to compute what the previous month ended with
+    // But we don't have previous month transactions here
+    // So we use the stored closing balance
+    return prevClosing.starting_balance || 0;
+  })();
+
+  const startingBalance = closing?.starting_balance ?? prevMonthBalance;
+  const fundoCaixa = startingBalance + totalRevenue - totalExpenses;
 
   const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -149,9 +208,7 @@ export default function FinanceiroPage() {
     try {
       const amount = parseFloat(form.total_amount) || 0;
       const installments = parseInt(form.installments) || 1;
-      const typeMap: Record<TxModalMode, string> = {
-        receita: 'sale', despesa: 'expense', salario: 'salary', adiantamento: 'advance', closed: '',
-      };
+      const type = modal === 'receita' ? 'sale' : 'expense';
 
       for (let i = 0; i < installments; i++) {
         const installmentAmount = installments > 1 ? amount / installments : amount;
@@ -160,7 +217,7 @@ export default function FinanceiroPage() {
 
         const payload: any = {
           salon_id: salon.id,
-          type: typeMap[modal],
+          type,
           description: form.description.trim(),
           total_amount: installmentAmount,
           category: form.category.trim() || null,
@@ -204,11 +261,45 @@ export default function FinanceiroPage() {
     fetchData();
   };
 
+  // Auto-fill starting balance from previous month's result
+  const autoFillStartingBalance = async () => {
+    if (!salon?.id) return;
+    // Fetch previous month transactions to calculate the actual ending balance
+    const [y, m] = monthDate.split('-').map(Number);
+    const prevStart = new Date(y, m - 2, 1);
+    const prevEnd = new Date(y, m - 1, 0);
+    const prevStartStr = `${prevStart.getFullYear()}-${String(prevStart.getMonth() + 1).padStart(2, '0')}-01`;
+    const prevEndStr = `${prevStart.getFullYear()}-${String(prevStart.getMonth() + 1).padStart(2, '0')}-${String(prevEnd.getDate()).padStart(2, '0')}`;
+
+    const [prevTxRes, prevClRes] = await Promise.all([
+      supabase
+        .from('transactions')
+        .select('type, total_amount')
+        .eq('salon_id', salon.id)
+        .gte('transaction_date', `${prevStartStr}T00:00:00`)
+        .lte('transaction_date', `${prevEndStr}T23:59:59`),
+      supabase
+        .from('monthly_closings')
+        .select('starting_balance')
+        .eq('salon_id', salon.id)
+        .eq('month', prevStartStr)
+        .maybeSingle(),
+    ]);
+
+    const prevTxs = prevTxRes.data || [];
+    const prevStartBal = prevClRes.data?.starting_balance || 0;
+    const prevRevenue = prevTxs.filter(t => t.type === 'sale').reduce((s, t) => s + t.total_amount, 0);
+    const prevExpense = prevTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.total_amount, 0);
+    const calculatedBalance = prevStartBal + prevRevenue - prevExpense;
+
+    await saveClosing('starting_balance', calculatedBalance);
+  };
+
   const openModal = (type: TxModalMode) => {
     setForm({
       description: '', total_amount: '', category: '',
       payment_method: 'pix', installments: '1',
-      transaction_date: new Date().toISOString().split('T')[0], notes: '',
+      transaction_date: new Date().toISOString().split('T')[0],
     });
     setModal(type);
   };
@@ -221,8 +312,7 @@ export default function FinanceiroPage() {
   ];
 
   const modalTitles: Record<TxModalMode, string> = {
-    receita: 'Nova Receita', despesa: 'Nova Despesa',
-    salario: 'Registrar Salário', adiantamento: 'Registrar Adiantamento', closed: '',
+    receita: 'Nova Receita', despesa: 'Nova Despesa', closed: '',
   };
 
   const getClientName = (tx: TxRow) => {
@@ -277,7 +367,7 @@ export default function FinanceiroPage() {
         </div>
       ) : (
         <>
-          {/* ══ RESUMO ══ */}
+          {/* RESUMO */}
           {tab === 'resumo' && (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -319,29 +409,10 @@ export default function FinanceiroPage() {
                   </div>
                 </div>
               </div>
-
-              {/* Advances */}
-              {advances.length > 0 && (
-                <div className="card p-5 border-nd-warning/30">
-                  <h3 className="section-label mb-2">Adiantamentos</h3>
-                  <p className="text-lg font-bold text-nd-warning">{fmt(totalAdvances)}</p>
-                  <p className="text-xs text-nd-muted mt-1">Valor reservado para o mês seguinte</p>
-                </div>
-              )}
-
-              {/* Quick actions */}
-              <div className="flex gap-2 flex-wrap">
-                <button onClick={() => openModal('salario')} className="btn-ghost text-xs">
-                  <UserCheck className="w-3.5 h-3.5" /> Salário
-                </button>
-                <button onClick={() => openModal('adiantamento')} className="btn-ghost text-xs">
-                  <Wallet className="w-3.5 h-3.5" /> Adiantamento
-                </button>
-              </div>
             </>
           )}
 
-          {/* ══ RECEITAS ══ */}
+          {/* RECEITAS */}
           {tab === 'receitas' && (
             <TxList
               items={sales}
@@ -354,10 +425,10 @@ export default function FinanceiroPage() {
             />
           )}
 
-          {/* ══ DESPESAS ══ */}
+          {/* DESPESAS */}
           {tab === 'despesas' && (
             <TxList
-              items={[...expenses, ...salaries, ...advances]}
+              items={expenses}
               emptyLabel="Nenhuma despesa registrada"
               colorClass="text-nd-danger"
               prefix="-"
@@ -367,23 +438,35 @@ export default function FinanceiroPage() {
             />
           )}
 
-          {/* ══ FECHAMENTO ══ */}
+          {/* FECHAMENTO */}
           {tab === 'fechamento' && (
             <div className="space-y-4">
               <div className="card p-5">
                 <h3 className="text-sm font-semibold text-nd-heading mb-4">Fechamento de Caixa — {monthLabel}</h3>
 
                 <div className="space-y-3">
-                  <ClosingRow
-                    label="Fundo de caixa inicial"
-                    value={closing?.starting_balance || 0}
-                    editable
-                    onSave={(v) => saveClosing('starting_balance', v)}
-                    fmt={fmt}
-                  />
+                  {/* Fundo de caixa inicial */}
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-sm text-nd-text font-medium">Fundo de caixa inicial</span>
+                    <div className="flex items-center gap-2">
+                      <ClosingValue
+                        value={startingBalance}
+                        onSave={(v) => saveClosing('starting_balance', v)}
+                        fmt={fmt}
+                      />
+                      <button
+                        onClick={autoFillStartingBalance}
+                        className="text-[10px] text-nd-accent hover:underline shrink-0"
+                        title="Auto-preencher com o saldo do mês anterior"
+                      >
+                        auto
+                      </button>
+                    </div>
+                  </div>
 
                   <div className="divider" />
 
+                  {/* Faturamento */}
                   <div className="flex justify-between items-center py-1">
                     <span className="text-sm text-nd-success font-medium">+ Faturamento do mês</span>
                     <span className="text-sm font-bold text-nd-success">{fmt(totalRevenue)}</span>
@@ -397,42 +480,84 @@ export default function FinanceiroPage() {
 
                   <div className="divider" />
 
+                  {/* Despesas */}
                   <div className="flex justify-between items-center py-1">
-                    <span className="text-sm text-nd-danger font-medium">- Gastos do mês</span>
+                    <span className="text-sm text-nd-danger font-medium">- Despesas do mês</span>
                     <span className="text-sm font-bold text-nd-danger">{fmt(totalExpenses)}</span>
                   </div>
                   <div className="pl-4 space-y-1">
-                    <MiniRow label="Dinheiro" value={fmt(expenseCash)} />
-                    <MiniRow label="Débito" value={fmt(expenseTransfer)} />
                     <MiniRow label="PIX" value={fmt(expensePix)} />
-                    <MiniRow label="Crédito/Parcelado" value={fmt(expenseCard)} />
+                    <MiniRow label="Dinheiro" value={fmt(expenseCash)} />
+                    <MiniRow label="Cartão" value={fmt(expenseCard)} />
+                    <MiniRow label="Transferência" value={fmt(expenseTransfer)} />
                   </div>
 
                   <div className="divider" />
 
-                  <div className="flex justify-between items-center py-1">
-                    <span className="text-sm text-nd-warning font-medium">- Salários</span>
-                    <span className="text-sm font-bold text-nd-warning">{fmt(totalSalaries)}</span>
-                  </div>
-
-                  {totalAdvances > 0 && (
-                    <>
-                      <div className="divider" />
-                      <div className="flex justify-between items-center py-1">
-                        <span className="text-sm text-nd-muted font-medium">Adiantamentos (reservado)</span>
-                        <span className="text-sm font-bold text-nd-muted">{fmt(totalAdvances)}</span>
-                      </div>
-                    </>
-                  )}
-
-                  <div className="divider" />
-
+                  {/* Resultado */}
                   <div className="flex justify-between items-center py-2 bg-nd-surface/50 rounded-xl px-4 -mx-1">
-                    <span className="text-sm font-bold text-nd-heading">= Fundo de caixa próximo mês</span>
+                    <span className="text-sm font-bold text-nd-heading">= Saldo do mês</span>
                     <span className={`text-lg font-bold ${fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'}`}>
                       {fmt(fundoCaixa)}
                     </span>
                   </div>
+
+                  {/* Adiantamentos do próximo mês */}
+                  {totalNextAdvances > 0 && (
+                    <>
+                      <div className="divider" />
+                      <div className="p-4 rounded-xl bg-nd-warning/5 border border-nd-warning/15 space-y-3">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-nd-warning shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-semibold text-nd-heading">Adiantamentos do próximo mês</p>
+                            <p className="text-[11px] text-nd-muted mt-0.5">
+                              Dinheiro recebido este mês como sinal/garantia de turnos futuros.
+                              Está fisicamente na conta mas pertence ao mês seguinte.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-y-1 pl-6">
+                          {nextMonthAdvances.map(adv => (
+                            <div key={adv.id} className="flex justify-between text-xs">
+                              <span className="text-nd-muted truncate mr-2">{adv.description}</span>
+                              <span className="text-nd-warning font-medium shrink-0">{fmt(adv.total_amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between items-center pt-2 border-t border-nd-warning/15">
+                          <span className="text-sm font-semibold text-nd-warning">Total adiantamentos</span>
+                          <span className="text-sm font-bold text-nd-warning">{fmt(totalNextAdvances)}</span>
+                        </div>
+                        <div className="pl-6 space-y-1">
+                          {nextAdvPix > 0 && <MiniRow label="PIX" value={fmt(nextAdvPix)} />}
+                          {nextAdvCash > 0 && <MiniRow label="Dinheiro" value={fmt(nextAdvCash)} />}
+                          {nextAdvCard > 0 && <MiniRow label="Cartão" value={fmt(nextAdvCard)} />}
+                          {nextAdvTransfer > 0 && <MiniRow label="Transferência" value={fmt(nextAdvTransfer)} />}
+                        </div>
+                      </div>
+
+                      {/* Reconciliation */}
+                      <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 space-y-2">
+                        <p className="text-xs font-semibold text-blue-800">Conciliação bancária</p>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-blue-700">Saldo do mês</span>
+                          <span className="text-blue-800 font-semibold">{fmt(fundoCaixa)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-blue-700">+ Adiantamentos futuros na conta</span>
+                          <span className="text-blue-800 font-semibold">{fmt(totalNextAdvances)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm font-bold border-t border-blue-200 pt-2">
+                          <span className="text-blue-900">Valor real na conta/caixa</span>
+                          <span className="text-blue-900">{fmt(fundoCaixa + totalNextAdvances)}</span>
+                        </div>
+                        <p className="text-[10px] text-blue-600 mt-1">
+                          Este valor deve bater com o saldo bancário + dinheiro físico.
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -440,7 +565,7 @@ export default function FinanceiroPage() {
         </>
       )}
 
-      {/* ══ MODAL ══ */}
+      {/* MODAL */}
       {modal !== 'closed' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setModal('closed')} />
@@ -456,7 +581,7 @@ export default function FinanceiroPage() {
                 <label className="section-label mb-1.5 block">Descrição *</label>
                 <input type="text" value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder={modal === 'salario' ? 'Ex: Salário Março' : modal === 'adiantamento' ? 'Ex: Adiantamento turno Abril' : 'Descrição'}
+                  placeholder="Descrição"
                   className="input-field" autoFocus />
               </div>
 
@@ -516,7 +641,7 @@ export default function FinanceiroPage() {
                 <label className="section-label mb-1.5 block">Categoria</label>
                 <input type="text" value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  placeholder="Ex: Material, Aluguel, Alimentação..."
+                  placeholder="Ex: Material, Aluguel, Salário..."
                   className="input-field" />
               </div>
 
@@ -574,37 +699,33 @@ function MiniRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ClosingRow({ label, value, editable, onSave, fmt }: {
-  label: string; value: number; editable?: boolean; onSave?: (v: number) => void; fmt: (v: number) => string;
+function ClosingValue({ value, onSave, fmt }: {
+  value: number; onSave: (v: number) => void; fmt: (v: number) => string;
 }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value.toString());
 
-  if (editing && editable) {
+  if (editing) {
     return (
-      <div className="flex items-center justify-between gap-2 py-1">
-        <span className="text-sm text-nd-text">{label}</span>
-        <div className="flex items-center gap-2">
-          <input type="number" value={val} onChange={e => setVal(e.target.value)}
-            className="input-field w-32 text-right text-sm py-1" autoFocus />
-          <button onClick={() => { onSave?.(parseFloat(val) || 0); setEditing(false); }}
-            className="btn-primary text-xs px-2 py-1"><Save className="w-3 h-3" /></button>
-          <button onClick={() => setEditing(false)} className="btn-ghost text-xs px-2 py-1">
-            <X className="w-3 h-3" />
-          </button>
-        </div>
+      <div className="flex items-center gap-2">
+        <input type="number" value={val} onChange={e => setVal(e.target.value)}
+          className="input-field w-32 text-right text-sm py-1" autoFocus
+          onKeyDown={e => { if (e.key === 'Enter') { onSave(parseFloat(val) || 0); setEditing(false); } }}
+        />
+        <button onClick={() => { onSave(parseFloat(val) || 0); setEditing(false); }}
+          className="btn-primary text-xs px-2 py-1"><Save className="w-3 h-3" /></button>
+        <button onClick={() => setEditing(false)} className="btn-ghost text-xs px-2 py-1">
+          <X className="w-3 h-3" />
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-nd-text">{label}</span>
-      <button onClick={() => editable && setEditing(true)}
-        className={`text-sm font-bold text-nd-heading ${editable ? 'hover:text-nd-accent cursor-pointer' : ''}`}>
-        {fmt(value)} {editable && <span className="text-[10px] text-nd-muted ml-1">editar</span>}
-      </button>
-    </div>
+    <button onClick={() => { setVal(value.toString()); setEditing(true); }}
+      className="text-sm font-bold text-nd-heading hover:text-nd-accent cursor-pointer">
+      {fmt(value)} <span className="text-[10px] text-nd-muted ml-1">editar</span>
+    </button>
   );
 }
 
