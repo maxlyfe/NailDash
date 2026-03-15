@@ -288,8 +288,8 @@ export default function FinanceiroPage() {
 
     const prevTxs = prevTxRes.data || [];
     const prevStartBal = prevClRes.data?.starting_balance || 0;
-    const prevRevenue = prevTxs.filter(t => t.type === 'sale').reduce((s, t) => s + t.total_amount, 0);
-    const prevExpense = prevTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.total_amount, 0);
+    const prevRevenue = prevTxs.filter((t: any) => t.type === 'sale').reduce((s: number, t: any) => s + t.total_amount, 0);
+    const prevExpense = prevTxs.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + t.total_amount, 0);
     const calculatedBalance = prevStartBal + prevRevenue - prevExpense;
 
     await saveClosing('starting_balance', calculatedBalance);

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { User } from '@supabase/supabase-js';
+import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 type BusinessHours = Record<string, { open: string; close: string } | null>;
 
@@ -34,54 +34,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = createClient();
 
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        // Fetch user's salon (try by owner first, then by membership)
-        const { data: owned } = await supabase
+    const fetchSalon = async (userId: string) => {
+      const { data: owned } = await supabase
+        .from('salons')
+        .select('id, name, owner_id, business_hours')
+        .eq('owner_id', userId)
+        .limit(1)
+        .single();
+      if (owned) {
+        setSalon(owned);
+      } else {
+        const { data: any } = await supabase
           .from('salons')
           .select('id, name, owner_id, business_hours')
-          .eq('owner_id', session.user.id)
           .limit(1)
           .single();
-        if (owned) {
-          setSalon(owned);
-        } else {
-          // Fallback: any salon visible via RLS
-          const { data: any } = await supabase
-            .from('salons')
-            .select('id, name, owner_id, business_hours')
-            .limit(1)
-            .single();
-          setSalon(any);
-        }
+        setSalon(any);
+      }
+    };
+
+    const init = async () => {
+      // getUser() validates token server-side and triggers refresh if needed
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      setUser(currentUser);
+      if (currentUser) {
+        await fetchSalon(currentUser.id);
       }
       setLoading(false);
     };
 
-    getSession();
+    init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          const { data: owned } = await supabase
-            .from('salons')
-            .select('id, name, owner_id, business_hours')
-            .eq('owner_id', session.user.id)
-            .limit(1)
-            .single();
-          if (owned) {
-            setSalon(owned);
-          } else {
-            const { data: any } = await supabase
-              .from('salons')
-              .select('id, name, owner_id, business_hours')
-              .limit(1)
-              .single();
-            setSalon(any);
+      async (event: AuthChangeEvent, session: Session | null) => {
+        const sessionUser = session?.user ?? null;
+        setUser(sessionUser);
+        if (sessionUser) {
+          // Only re-fetch salon on sign-in (not on every token refresh)
+          if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+            await fetchSalon(sessionUser.id);
           }
         } else {
           setSalon(null);

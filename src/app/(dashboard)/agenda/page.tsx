@@ -188,10 +188,10 @@ export default function AgendaPage() {
       setProfessionals(pr);
       setServices((sRes.data || []) as PickService[]);
       const cm: Record<string, string> = {};
-      cl.forEach(c => { cm[c.id] = c.name; });
+      cl.forEach((c: any) => { cm[c.id] = c.name; });
       setClientMap(cm);
       const pm: Record<string, string> = {};
-      pr.forEach(p => { pm[p.id] = p.name; });
+      pr.forEach((p: any) => { pm[p.id] = p.name; });
       setProfMap(pm);
     };
     load();

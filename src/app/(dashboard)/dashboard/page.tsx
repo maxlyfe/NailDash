@@ -80,13 +80,13 @@ export default function DashboardPage() {
     ]);
 
     const todaySales = salesRes.data || [];
-    const revenueToday = todaySales.reduce((s, t) => s + t.total_amount, 0);
+    const revenueToday = todaySales.reduce((s: number, t: any) => s + t.total_amount, 0);
     const totalClients = clientsRes.count || 0;
     const avgTicket = todaySales.length > 0 ? revenueToday / todaySales.length : 0;
 
     const todayAppts = apptsRes.data || [];
     const appointmentsToday = todayAppts.length;
-    const appointmentsClosed = todayAppts.filter(a => a.closed_at || a.status === 'completed').length;
+    const appointmentsClosed = todayAppts.filter((a: any) => a.closed_at || a.status === 'completed').length;
     const appointmentsOpen = appointmentsToday - appointmentsClosed;
 
     setStats({
