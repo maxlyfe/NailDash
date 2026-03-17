@@ -199,23 +199,25 @@ export default function AgendaPage() {
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
-  // Reset weekPage when changing week
-  useEffect(() => { setWeekPage(0); }, [weekStart.getTime()]);
+  // Reset weekPage when changing week (use pending value if set by navigate)
+  const pendingWeekPageRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (pendingWeekPageRef.current !== null) {
+      setWeekPage(pendingWeekPageRef.current);
+      pendingWeekPageRef.current = null;
+    } else {
+      setWeekPage(0);
+    }
+  }, [weekStart.getTime()]);
 
-  // For current week, hide days before today (applies to both week and day views)
-  const filteredWeekDays = useMemo(() => {
-    const now = new Date();
-    const currentWeekStart = getWeekDays(now)[0];
-    if (!isSameDay(weekDays[0], currentWeekStart)) return weekDays; // past/future week: show all
-    const todayIdx = weekDays.findIndex(d => isSameDay(d, now));
-    return todayIdx > 0 ? weekDays.slice(todayIdx) : weekDays;
-  }, [weekDays]);
+  // Always show all 7 days — no filtering of past days
+  const filteredWeekDays = weekDays;
 
-  // Mobile: paginate filtered days in groups of 4
+  // Mobile: paginate filtered days — page 0: first 4, page 1: remaining
   const visibleDays = useMemo(() => {
     if (!isMobile || viewMode !== 'week') return filteredWeekDays;
     if (filteredWeekDays.length <= 4) return filteredWeekDays;
-    const start = weekPage === 0 ? 0 : Math.max(0, filteredWeekDays.length - 4);
+    const start = weekPage === 0 ? 0 : 4;
     return filteredWeekDays.slice(start, start + 4);
   }, [isMobile, viewMode, filteredWeekDays, weekPage]);
 
@@ -323,16 +325,18 @@ export default function AgendaPage() {
   const navigate = (delta: number) => {
     // On mobile week view: swipe between pages within the week first
     if (isMobile && viewMode === 'week' && filteredWeekDays.length > 4) {
+      const maxPage = Math.ceil(filteredWeekDays.length / 4) - 1;
       const nextPage = weekPage + delta;
-      if (nextPage >= 0 && nextPage <= 1) {
+      if (nextPage >= 0 && nextPage <= maxPage) {
         setWeekPage(nextPage);
         return;
       }
-      // If already at edge page, move to next/prev week and reset page
+      // At edge: move to next/prev week
       const d = new Date(currentDate);
       d.setDate(d.getDate() + delta * 7);
+      // Going back → start at last page; going forward → start at first page
+      pendingWeekPageRef.current = delta > 0 ? 0 : 1;
       setCurrentDate(d);
-      setWeekPage(delta > 0 ? 0 : 1);
       return;
     }
     const d = new Date(currentDate);
