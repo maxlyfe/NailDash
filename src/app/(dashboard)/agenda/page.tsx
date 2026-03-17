@@ -120,7 +120,7 @@ export default function AgendaPage() {
 
   // Earliest business hour for auto-scroll
   const scrollToHour = useMemo(() => {
-    let minOpen = 9;
+    let minOpen = 24;
     for (let i = 0; i < 7; i++) {
       const dh = bh[String(i)];
       if (dh) {
@@ -128,7 +128,7 @@ export default function AgendaPage() {
         if (o < minOpen) minOpen = o;
       }
     }
-    return minOpen;
+    return minOpen === 24 ? 8 : minOpen;
   }, [salon?.id]);
 
   const [slotHeight, setSlotHeight] = useState(70); // px per hour — zoom changes this
@@ -192,7 +192,7 @@ export default function AgendaPage() {
 
   // Mobile detection for 4-day week view
   const [isMobile, setIsMobile] = useState(false);
-  const [weekPage, setWeekPage] = useState(0); // 0 = first 4 days, 1 = last 4 days (overlapping day 3)
+  const [weekPage, setWeekPage] = useState(0);
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
@@ -201,22 +201,24 @@ export default function AgendaPage() {
   }, []);
   // Reset weekPage when changing week
   useEffect(() => { setWeekPage(0); }, [weekStart.getTime()]);
-  // Auto-select page based on today's day index
-  useEffect(() => {
-    if (isMobile && viewMode === 'week') {
-      const todayIdx = new Date().getDay();
-      setWeekPage(todayIdx >= 4 ? 1 : 0);
-    }
-  }, [isMobile, viewMode]);
 
+  // For current week, hide days before today (applies to both week and day views)
+  const filteredWeekDays = useMemo(() => {
+    const now = new Date();
+    const currentWeekStart = getWeekDays(now)[0];
+    if (!isSameDay(weekDays[0], currentWeekStart)) return weekDays; // past/future week: show all
+    const todayIdx = weekDays.findIndex(d => isSameDay(d, now));
+    return todayIdx > 0 ? weekDays.slice(todayIdx) : weekDays;
+  }, [weekDays]);
+
+  // Mobile: paginate filtered days in groups of 4
   const visibleDays = useMemo(() => {
-    if (!isMobile || viewMode !== 'week') return weekDays;
-    const start = weekPage === 0 ? 0 : 3;
-    return weekDays.slice(start, start + 4);
-  }, [isMobile, viewMode, weekDays, weekPage]);
+    if (!isMobile || viewMode !== 'week') return filteredWeekDays;
+    if (filteredWeekDays.length <= 4) return filteredWeekDays;
+    const start = weekPage === 0 ? 0 : Math.max(0, filteredWeekDays.length - 4);
+    return filteredWeekDays.slice(start, start + 4);
+  }, [isMobile, viewMode, filteredWeekDays, weekPage]);
 
-  // Map from visible index to original weekDays index (for appointment positioning)
-  const visibleDayOffset = (!isMobile || viewMode !== 'week') ? 0 : (weekPage === 0 ? 0 : 3);
   const visibleColCount = visibleDays.length;
 
   // Load dropdown data
@@ -319,8 +321,8 @@ export default function AgendaPage() {
 
   // Navigation
   const navigate = (delta: number) => {
-    // On mobile week view: swipe between page 0/1 within the week first
-    if (isMobile && viewMode === 'week') {
+    // On mobile week view: swipe between pages within the week first
+    if (isMobile && viewMode === 'week' && filteredWeekDays.length > 4) {
       const nextPage = weekPage + delta;
       if (nextPage >= 0 && nextPage <= 1) {
         setWeekPage(nextPage);
@@ -819,14 +821,29 @@ export default function AgendaPage() {
     onTouchEnd: (e: React.TouchEvent) => { handleTouchEnd(e); handlePinchEnd(); },
   };
 
-  // Scroll to business hours start on mount
-  const gridRef = useRef<HTMLDivElement>(null);
+  // Scroll to business hours start on load
+  const gridElRef = useRef<HTMLDivElement | null>(null);
+  const needsScrollRef = useRef(true);
+
+  // Mark that we need to scroll when loading/view changes
   useEffect(() => {
-    if (!loading && gridRef.current && viewMode !== 'month') {
-      const scrollTo = Math.max(0, scrollToHour * slotHeight - 20);
-      gridRef.current.scrollTop = scrollTo;
-    }
+    needsScrollRef.current = true;
   }, [loading, viewMode]);
+
+  const scrollToBusinessHours = useCallback((el: HTMLDivElement) => {
+    // Simply set scrollTop based on math: each hour = slotHeight px
+    el.scrollTop = scrollToHour * slotHeight;
+  }, [scrollToHour, slotHeight]);
+
+  // Callback ref: fires when DOM element is mounted
+  const gridCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    gridElRef.current = node;
+    if (node && needsScrollRef.current && viewMode !== 'month') {
+      needsScrollRef.current = false;
+      // Scroll immediately — the grid children are rendered at this point
+      scrollToBusinessHours(node);
+    }
+  }, [viewMode, scrollToBusinessHours]);
 
   return (
     <div className="space-y-3 animate-fade-in h-full flex flex-col">
@@ -870,10 +887,10 @@ export default function AgendaPage() {
       ) : viewMode === 'week' ? (
         /* ════ WEEK VIEW ════ */
         <div className="card overflow-hidden flex-1 flex flex-col min-h-0">
-          {/* Day headers */}
-          <div className="grid border-b border-nd-border/50 shrink-0" style={{ gridTemplateColumns: `48px repeat(${visibleColCount}, 1fr)` }}>
+          {/* Day headers — fixed above scroll area */}
+          <div className="grid border-b border-nd-border/50 shrink-0 bg-nd-card" style={{ gridTemplateColumns: `48px repeat(${visibleColCount}, 1fr)` }}>
             <div className="border-r border-nd-border/30 flex items-center justify-center">
-              {isMobile && (
+              {isMobile && filteredWeekDays.length > 4 && (
                 <button onClick={() => setWeekPage(weekPage === 0 ? 1 : 0)}
                   className="text-[9px] text-nd-accent font-bold px-1 py-0.5">
                   {weekPage === 0 ? '▸' : '◂'}
@@ -906,12 +923,12 @@ export default function AgendaPage() {
             })}
           </div>
 
-          {/* Time grid */}
-          <div ref={gridRef} className="overflow-auto flex-1" {...gridTouchHandlers}>
+          {/* Time grid — scrollable */}
+          <div ref={gridCallbackRef} className="overflow-auto flex-1" {...gridTouchHandlers}>
             <div className="grid relative" style={{ gridTemplateColumns: `48px repeat(${visibleColCount}, 1fr)` }}>
               {hours.map(hour => (
                 <div key={hour} className="contents">
-                  <div className="border-r border-nd-border/30 text-right pr-1.5 relative" style={{ height: `${slotHeight}px` }}>
+                  <div data-hour={hour} className="border-r border-nd-border/30 text-right pr-1.5 relative" style={{ height: `${slotHeight}px` }}>
                     <span className="text-[10px] text-nd-muted absolute -top-2 right-1.5">
                       {String(hour).padStart(2, '0')}:00
                     </span>
@@ -976,8 +993,8 @@ export default function AgendaPage() {
                 const now = new Date();
                 const mins = now.getHours() * 60 + now.getMinutes();
                 const top = (mins / 60) * slotHeight;
-                const dayIndex = now.getDay() - visibleDayOffset;
-                if (dayIndex < 0 || dayIndex >= visibleColCount) return null;
+                const dayIndex = visibleDays.findIndex(d => isSameDay(d, now));
+                if (dayIndex < 0) return null;
                 return (
                   <div
                     className="absolute h-0.5 bg-nd-danger z-20 pointer-events-none"
@@ -997,16 +1014,16 @@ export default function AgendaPage() {
       ) : viewMode === 'day' ? (
         /* ════ DAY VIEW ════ */
         <div className="card overflow-hidden flex-1 flex flex-col min-h-0">
-          {/* Day header with week strip */}
-          <div className="flex border-b border-nd-border/50 shrink-0 overflow-x-auto">
-            {weekDays.map((day, i) => {
+          {/* Day header with week strip — fixed above scroll area */}
+          <div className="flex border-b border-nd-border/50 overflow-x-auto shrink-0 bg-nd-card">
+            {filteredWeekDays.map((day, i) => {
               const isToday = isSameDay(day, new Date());
               const isSelected = isSameDay(day, currentDate);
               const dayApptCount = getApptForDay(day).length;
               return (
                 <button key={i} onClick={() => setCurrentDate(day)}
                   className={`flex-1 min-w-[48px] py-2 text-center transition-colors ${isSelected ? 'bg-nd-accent/10 border-b-2 border-nd-accent' : 'hover:bg-nd-surface/50'}`}>
-                  <p className={`text-[10px] uppercase ${isToday ? 'text-nd-accent font-bold' : 'text-nd-muted'}`}>{DAY_NAMES_SHORT[i]}</p>
+                  <p className={`text-[10px] uppercase ${isToday ? 'text-nd-accent font-bold' : 'text-nd-muted'}`}>{DAY_NAMES_SHORT[day.getDay()]}</p>
                   <p className={`text-sm font-bold ${isToday ? 'text-nd-accent' : isSelected ? 'text-nd-heading' : 'text-nd-muted'}`}>{day.getDate()}</p>
                   {dayApptCount > 0 && <span className="text-[9px] text-nd-accent font-medium">{dayApptCount}</span>}
                 </button>
@@ -1014,14 +1031,8 @@ export default function AgendaPage() {
             })}
           </div>
 
-          <div ref={gridRef} className="overflow-auto flex-1" {...gridTouchHandlers}>
+          <div ref={gridCallbackRef} className="overflow-auto flex-1" {...gridTouchHandlers}>
             <div className="relative">
-              {/* Date label */}
-              <div className="sticky top-0 z-20 bg-nd-card/90 backdrop-blur-sm px-4 py-2 text-center border-b border-nd-border/20">
-                <span className="text-xs text-nd-muted capitalize">
-                  {currentDate.toLocaleDateString(locale, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
-                </span>
-              </div>
 
               {hours.map(hour => {
                 const dayBh = bh[String(currentDate.getDay())];
@@ -1029,7 +1040,7 @@ export default function AgendaPage() {
                 const isShiftStart = dayBh && hour === parseHour(dayBh.open);
                 const isShiftEnd = dayBh && hour === parseHour(dayBh.close);
                 return (
-                  <div key={hour} className="relative">
+                  <div key={hour} className="relative" data-hour={hour}>
                     {isShiftStart && (
                       <div className="absolute inset-x-0 top-0 z-10 flex items-center px-4 pointer-events-none" style={{ left: '56px' }}>
                         <div className="h-px flex-1 bg-nd-accent/30 bg-[repeating-linear-gradient(90deg,transparent,transparent_4px,var(--tw-gradient-from)_4px,var(--tw-gradient-from)_8px)]" />
@@ -1115,7 +1126,7 @@ export default function AgendaPage() {
               {isSameDay(currentDate, new Date()) && (() => {
                 const now = new Date();
                 const mins = now.getHours() * 60 + now.getMinutes();
-                const top = (mins / 60) * slotHeight + 32; // +32 for sticky header
+                const top = (mins / 60) * slotHeight;
                 return (
                   <div className="absolute h-0.5 bg-nd-danger z-20 pointer-events-none" style={{ top: `${top}px`, left: '56px', right: 0 }}>
                     <div className="w-2.5 h-2.5 rounded-full bg-nd-danger absolute -left-1 -top-1" />
