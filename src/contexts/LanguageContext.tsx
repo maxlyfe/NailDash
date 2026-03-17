@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ptBR, esAR } from '@/lib/i18n';
 import type { Translations } from '@/lib/i18n';
 import { createClient } from '@/lib/supabase/client';
@@ -39,14 +39,16 @@ function toLocale(val: string | null | undefined): Locale {
   return 'pt-BR';
 }
 
-function getInitialLocale(): Locale {
-  if (typeof window === 'undefined') return 'pt-BR';
-  return toLocale(localStorage.getItem('naildash_locale'));
-}
-
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
+  // Always start with pt-BR to match server render, then sync from localStorage
+  const [locale, setLocaleState] = useState<Locale>('pt-BR');
   const salonIdRef = useRef<string | null>(null);
+
+  // Sync from localStorage after mount to avoid hydration mismatch
+  useEffect(() => {
+    const stored = toLocale(localStorage.getItem('naildash_locale'));
+    if (stored !== 'pt-BR') setLocaleState(stored);
+  }, []);
 
   // Called by the dashboard layout once salon is loaded
   const syncFromSalon = (salonId: string, dbLocale: string | null) => {

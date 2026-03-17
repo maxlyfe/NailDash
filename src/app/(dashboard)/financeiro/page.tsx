@@ -406,19 +406,19 @@ export default function FinanceiroPage() {
                 <div className="card p-5">
                   <h3 className="section-label mb-3">{t.revenueByMethod}</h3>
                   <div className="space-y-2">
-                    <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(revenuePix)} />
-                    <PayRow icon={Banknote} label={t.pay_cash} value={fmt(revenueCash)} />
+                    {locale !== 'es-AR' && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(revenuePix)} />}
+                    <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)} />
                     <PayRow icon={CreditCard} label={t.pay_card} value={fmt(revenueCard)} />
                     <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(revenueTransfer)} />
                   </div>
                   <div className="divider mt-3 pt-3">
                     <div className="flex justify-between text-sm font-semibold">
                       <span className="text-nd-heading">{t.inBank}</span>
-                      <span className="text-nd-accent">{fmt(revenuePix + revenueCard + revenueTransfer)}</span>
+                      <span className="text-nd-accent">{fmt(locale === 'es-AR' ? revenueCard + revenueTransfer : revenuePix + revenueCard + revenueTransfer)}</span>
                     </div>
                     <div className="flex justify-between text-sm font-semibold mt-1">
                       <span className="text-nd-heading">{t.inCash}</span>
-                      <span className="text-nd-success">{fmt(revenueCash)}</span>
+                      <span className="text-nd-success">{fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)}</span>
                     </div>
                   </div>
                 </div>
@@ -426,8 +426,8 @@ export default function FinanceiroPage() {
                 <div className="card p-5">
                   <h3 className="section-label mb-3">{t.expenseByMethod}</h3>
                   <div className="space-y-2">
-                    <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(expensePix)} />
-                    <PayRow icon={Banknote} label={t.pay_cash} value={fmt(expenseCash)} />
+                    {locale !== 'es-AR' && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(expensePix)} />}
+                    <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? expenseCash + expensePix : expenseCash)} />
                     <PayRow icon={CreditCard} label={t.pay_card} value={fmt(expenseCard)} />
                     <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(expenseTransfer)} />
                   </div>
@@ -499,8 +499,8 @@ export default function FinanceiroPage() {
                     <span className="text-sm font-bold text-nd-success">{fmt(totalRevenue)}</span>
                   </div>
                   <div className="pl-4 space-y-1">
-                    <MiniRow label={t.pay_pix} value={fmt(revenuePix)} />
-                    <MiniRow label={t.pay_cash} value={fmt(revenueCash)} />
+                    {locale !== 'es-AR' && <MiniRow label={t.pay_pix} value={fmt(revenuePix)} />}
+                    <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)} />
                     <MiniRow label={t.pay_card} value={fmt(revenueCard)} />
                     <MiniRow label={t.pay_transfer} value={fmt(revenueTransfer)} />
                   </div>
@@ -513,8 +513,8 @@ export default function FinanceiroPage() {
                     <span className="text-sm font-bold text-nd-danger">{fmt(totalExpenses)}</span>
                   </div>
                   <div className="pl-4 space-y-1">
-                    <MiniRow label={t.pay_pix} value={fmt(expensePix)} />
-                    <MiniRow label={t.pay_cash} value={fmt(expenseCash)} />
+                    {locale !== 'es-AR' && <MiniRow label={t.pay_pix} value={fmt(expensePix)} />}
+                    <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? expenseCash + expensePix : expenseCash)} />
                     <MiniRow label={t.pay_card} value={fmt(expenseCard)} />
                     <MiniRow label={t.pay_transfer} value={fmt(expenseTransfer)} />
                   </div>
@@ -556,8 +556,8 @@ export default function FinanceiroPage() {
                           <span className="text-sm font-bold text-nd-warning">{fmt(totalNextAdvances)}</span>
                         </div>
                         <div className="pl-6 space-y-1">
-                          {nextAdvPix > 0 && <MiniRow label={t.pay_pix} value={fmt(nextAdvPix)} />}
-                          {nextAdvCash > 0 && <MiniRow label={t.pay_cash} value={fmt(nextAdvCash)} />}
+                          {locale !== 'es-AR' && nextAdvPix > 0 && <MiniRow label={t.pay_pix} value={fmt(nextAdvPix)} />}
+                          {(locale === 'es-AR' ? nextAdvCash + nextAdvPix : nextAdvCash) > 0 && <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? nextAdvCash + nextAdvPix : nextAdvCash)} />}
                           {nextAdvCard > 0 && <MiniRow label={t.pay_card} value={fmt(nextAdvCard)} />}
                           {nextAdvTransfer > 0 && <MiniRow label={t.pay_transfer} value={fmt(nextAdvTransfer)} />}
                         </div>
@@ -634,7 +634,7 @@ export default function FinanceiroPage() {
                     { id: 'cash', label: t.pay_cash, icon: Banknote },
                     { id: 'card', label: t.pay_card, icon: CreditCard },
                     { id: 'transfer', label: t.pay_transfer, icon: ArrowRightLeft },
-                  ] as const).map(pm => (
+                  ] as const).filter(pm => locale !== 'es-AR' || pm.id !== 'pix').map(pm => (
                     <button key={pm.id}
                       onClick={() => setForm(f => ({ ...f, payment_method: pm.id }))}
                       className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-xs transition-all ${

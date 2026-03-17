@@ -15,7 +15,7 @@ import {
 type PickClient = { id: string; name: string };
 type PickProf = { id: string; name: string };
 type PickService = { id: string; name: string; duration_minutes: number; price: number };
-type ViewMode = 'week' | 'day';
+type ViewMode = 'week' | 'day' | 'month';
 type ModalMode = 'closed' | 'create' | 'edit' | 'confirm_advance' | 'close_shift';
 type DayHours = { open: string; close: string } | null;
 type BusinessHours = Record<string, DayHours>;
@@ -105,12 +105,16 @@ export default function AgendaPage() {
     completed: t.status_completed, cancelled: t.status_cancelled, no_show: 'No show',
   };
 
-  const PAYMENT_METHODS = [
+  const ALL_PAYMENT_METHODS = [
     { value: 'pix', label: t.pay_pix, icon: Banknote },
     { value: 'cash', label: t.pay_cash, icon: DollarSign },
     { value: 'card', label: t.pay_card, icon: CreditCard },
     { value: 'transfer', label: t.pay_transfer, icon: ArrowDownLeft },
   ];
+  // Argentina: no PIX — show only cash, card, transfer
+  const PAYMENT_METHODS = locale === 'es-AR'
+    ? ALL_PAYMENT_METHODS.filter(m => m.value !== 'pix')
+    : ALL_PAYMENT_METHODS;
 
   const DAY_NAMES_SHORT = [t.dayShort_sun, t.dayShort_mon, t.dayShort_tue, t.dayShort_wed, t.dayShort_thu, t.dayShort_fri, t.dayShort_sat];
 
@@ -127,10 +131,11 @@ export default function AgendaPage() {
     return minOpen;
   }, [salon?.id]);
 
-  const SLOT_HEIGHT = 70; // px per hour
-  const TOTAL_HOURS = 24; // show all 24 hours
+  const [slotHeight, setSlotHeight] = useState(70); // px per hour — zoom changes this
+  const TOTAL_HOURS = 24;
 
   const [appointments, setAppointments] = useState<ApptRow[]>([]);
+  const [apptServiceNames, setApptServiceNames] = useState<Record<string, string>>({});
   const [clients, setClients] = useState<PickClient[]>([]);
   const [professionals, setProfessionals] = useState<PickProf[]>([]);
   const [services, setServices] = useState<PickService[]>([]);
@@ -185,6 +190,35 @@ export default function AgendaPage() {
   const weekStart = weekDays[0];
   const weekEnd = weekDays[6];
 
+  // Mobile detection for 4-day week view
+  const [isMobile, setIsMobile] = useState(false);
+  const [weekPage, setWeekPage] = useState(0); // 0 = first 4 days, 1 = last 4 days (overlapping day 3)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  // Reset weekPage when changing week
+  useEffect(() => { setWeekPage(0); }, [weekStart.getTime()]);
+  // Auto-select page based on today's day index
+  useEffect(() => {
+    if (isMobile && viewMode === 'week') {
+      const todayIdx = new Date().getDay();
+      setWeekPage(todayIdx >= 4 ? 1 : 0);
+    }
+  }, [isMobile, viewMode]);
+
+  const visibleDays = useMemo(() => {
+    if (!isMobile || viewMode !== 'week') return weekDays;
+    const start = weekPage === 0 ? 0 : 3;
+    return weekDays.slice(start, start + 4);
+  }, [isMobile, viewMode, weekDays, weekPage]);
+
+  // Map from visible index to original weekDays index (for appointment positioning)
+  const visibleDayOffset = (!isMobile || viewMode !== 'week') ? 0 : (weekPage === 0 ? 0 : 3);
+  const visibleColCount = visibleDays.length;
+
   // Load dropdown data
   useEffect(() => {
     if (!salon?.id) return;
@@ -213,12 +247,23 @@ export default function AgendaPage() {
   const fetchAppointments = useCallback(async () => {
     if (!salon?.id) return; // Wait for salon — don't show empty state
     setLoading(true);
-    const rangeStart = viewMode === 'week'
-      ? `${toDateStr(weekStart)}T00:00:00`
-      : `${toDateStr(currentDate)}T00:00:00`;
-    const rangeEnd = viewMode === 'week'
-      ? `${toDateStr(weekEnd)}T23:59:59`
-      : `${toDateStr(currentDate)}T23:59:59`;
+    let rangeStart: string, rangeEnd: string;
+    if (viewMode === 'month') {
+      const y = currentDate.getFullYear(), m = currentDate.getMonth();
+      const firstDay = new Date(y, m, 1);
+      const lastDay = new Date(y, m + 1, 0);
+      // Extend to cover full calendar weeks
+      firstDay.setDate(firstDay.getDate() - firstDay.getDay());
+      lastDay.setDate(lastDay.getDate() + (6 - lastDay.getDay()));
+      rangeStart = `${toDateStr(firstDay)}T00:00:00`;
+      rangeEnd = `${toDateStr(lastDay)}T23:59:59`;
+    } else if (viewMode === 'week') {
+      rangeStart = `${toDateStr(weekStart)}T00:00:00`;
+      rangeEnd = `${toDateStr(weekEnd)}T23:59:59`;
+    } else {
+      rangeStart = `${toDateStr(currentDate)}T00:00:00`;
+      rangeEnd = `${toDateStr(currentDate)}T23:59:59`;
+    }
 
     const { data } = await supabase
       .from('appointments')
@@ -229,7 +274,33 @@ export default function AgendaPage() {
       .neq('status', 'cancelled')
       .order('starts_at');
 
-    setAppointments(data || []);
+    const appts = data || [];
+    setAppointments(appts);
+
+    // Load service names for display
+    if (appts.length > 0) {
+      const apptIds = appts.map((a: any) => a.id);
+      const { data: asvcs } = await supabase
+        .from('appointment_services')
+        .select('appointment_id, service:services(name)')
+        .in('appointment_id', apptIds);
+      if (asvcs) {
+        const map: Record<string, string> = {};
+        const grouped: Record<string, string[]> = {};
+        asvcs.forEach((row: any) => {
+          const name = Array.isArray(row.service) ? row.service[0]?.name : row.service?.name;
+          if (name) {
+            if (!grouped[row.appointment_id]) grouped[row.appointment_id] = [];
+            grouped[row.appointment_id].push(name);
+          }
+        });
+        for (const [aid, names] of Object.entries(grouped)) {
+          map[aid] = names.join(' + ');
+        }
+        setApptServiceNames(map);
+      }
+    }
+
     setLoading(false);
   }, [salon?.id, viewMode, toDateStr(weekStart), toDateStr(currentDate)]);
 
@@ -248,8 +319,26 @@ export default function AgendaPage() {
 
   // Navigation
   const navigate = (delta: number) => {
+    // On mobile week view: swipe between page 0/1 within the week first
+    if (isMobile && viewMode === 'week') {
+      const nextPage = weekPage + delta;
+      if (nextPage >= 0 && nextPage <= 1) {
+        setWeekPage(nextPage);
+        return;
+      }
+      // If already at edge page, move to next/prev week and reset page
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + delta * 7);
+      setCurrentDate(d);
+      setWeekPage(delta > 0 ? 0 : 1);
+      return;
+    }
     const d = new Date(currentDate);
-    d.setDate(d.getDate() + (viewMode === 'week' ? delta * 7 : delta));
+    if (viewMode === 'month') {
+      d.setMonth(d.getMonth() + delta);
+    } else {
+      d.setDate(d.getDate() + (viewMode === 'week' ? delta * 7 : delta));
+    }
     setCurrentDate(d);
   };
 
@@ -266,8 +355,8 @@ export default function AgendaPage() {
     const end = new Date(appt.ends_at);
     const startMin = start.getHours() * 60 + start.getMinutes();
     const endMin = end.getHours() * 60 + end.getMinutes();
-    const top = (startMin / 60) * SLOT_HEIGHT;
-    const height = Math.max(((endMin - startMin) / 60) * SLOT_HEIGHT, 24);
+    const top = (startMin / 60) * slotHeight;
+    const height = Math.max(((endMin - startMin) / 60) * slotHeight, 24);
     return { top: `${top}px`, height: `${height}px` };
   };
 
@@ -644,15 +733,97 @@ export default function AgendaPage() {
   const isCurrentWeek = isSameDay(weekDays[0], getWeekDays(new Date())[0]);
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => i);
 
-  const headerLabel = viewMode === 'week'
-    ? `${weekStart.getDate()} – ${weekEnd.getDate()} de ${weekEnd.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`
+  const headerLabel = viewMode === 'month'
+    ? currentDate.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+    : viewMode === 'week'
+    ? `${visibleDays[0].getDate()} – ${visibleDays[visibleDays.length - 1].getDate()} de ${visibleDays[visibleDays.length - 1].toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`
     : currentDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' });
+
+  // Duration formatter
+  const formatDuration = (startIso: string, endIso: string) => {
+    const mins = Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000);
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  };
+
+  // Month view: get calendar weeks for the current month
+  const monthWeeks = useMemo(() => {
+    const y = currentDate.getFullYear(), m = currentDate.getMonth();
+    const first = new Date(y, m, 1);
+    const last = new Date(y, m + 1, 0);
+    first.setDate(first.getDate() - first.getDay());
+    const weeks: Date[][] = [];
+    const d = new Date(first);
+    while (d <= last || d.getDay() !== 0) {
+      const week: Date[] = [];
+      for (let i = 0; i < 7; i++) {
+        week.push(new Date(d));
+        d.setDate(d.getDate() + 1);
+      }
+      weeks.push(week);
+    }
+    return weeks;
+  }, [currentDate.getFullYear(), currentDate.getMonth()]);
+
+  // Swipe handling for mobile
+  const touchRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    touchRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchRef.current) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchRef.current.x;
+    const dy = touch.clientY - touchRef.current.y;
+    const dt = Date.now() - touchRef.current.time;
+    touchRef.current = null;
+    // Only swipe if horizontal > vertical and fast enough
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < 400) {
+      navigate(dx < 0 ? 1 : -1);
+    }
+  };
+
+  // Pinch-to-zoom for day/week view
+  const pinchRef = useRef<number | null>(null);
+  const handlePinchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      pinchRef.current = d;
+    }
+  };
+  const handlePinchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const scale = d / pinchRef.current;
+      if (Math.abs(scale - 1) > 0.05) {
+        setSlotHeight(h => Math.min(150, Math.max(35, Math.round(h * scale))));
+        pinchRef.current = d;
+      }
+    }
+  };
+  const handlePinchEnd = () => { pinchRef.current = null; };
+
+  // Combined touch handlers
+  const gridTouchHandlers = {
+    onTouchStart: (e: React.TouchEvent) => { handleTouchStart(e); handlePinchStart(e); },
+    onTouchMove: (e: React.TouchEvent) => { handlePinchMove(e); },
+    onTouchEnd: (e: React.TouchEvent) => { handleTouchEnd(e); handlePinchEnd(); },
+  };
 
   // Scroll to business hours start on mount
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!loading && gridRef.current) {
-      const scrollTo = Math.max(0, scrollToHour * SLOT_HEIGHT - 20);
+    if (!loading && gridRef.current && viewMode !== 'month') {
+      const scrollTo = Math.max(0, scrollToHour * slotHeight - 20);
       gridRef.current.scrollTop = scrollTo;
     }
   }, [loading, viewMode]);
@@ -683,14 +854,12 @@ export default function AgendaPage() {
           <span className="text-sm font-semibold text-nd-heading capitalize ml-1">{headerLabel}</span>
         </div>
         <div className="flex gap-1 bg-nd-surface rounded-xl p-0.5">
-          <button onClick={() => setViewMode('week')}
-            className={`text-xs px-3 py-1.5 rounded-lg transition-all ${viewMode === 'week' ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
-            {t.weekView}
-          </button>
-          <button onClick={() => setViewMode('day')}
-            className={`text-xs px-3 py-1.5 rounded-lg transition-all ${viewMode === 'day' ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
-            {t.dayView}
-          </button>
+          {(['month', 'week', 'day'] as const).map(mode => (
+            <button key={mode} onClick={() => setViewMode(mode)}
+              className={`text-xs px-3 py-1.5 rounded-lg transition-all ${viewMode === mode ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
+              {mode === 'month' ? t.monthView : mode === 'week' ? t.weekView : t.dayView}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -702,9 +871,16 @@ export default function AgendaPage() {
         /* ════ WEEK VIEW ════ */
         <div className="card overflow-hidden flex-1 flex flex-col min-h-0">
           {/* Day headers */}
-          <div className="grid border-b border-nd-border/50 shrink-0" style={{ gridTemplateColumns: '48px repeat(7, 1fr)' }}>
-            <div className="border-r border-nd-border/30" />
-            {weekDays.map((day, i) => {
+          <div className="grid border-b border-nd-border/50 shrink-0" style={{ gridTemplateColumns: `48px repeat(${visibleColCount}, 1fr)` }}>
+            <div className="border-r border-nd-border/30 flex items-center justify-center">
+              {isMobile && (
+                <button onClick={() => setWeekPage(weekPage === 0 ? 1 : 0)}
+                  className="text-[9px] text-nd-accent font-bold px-1 py-0.5">
+                  {weekPage === 0 ? '▸' : '◂'}
+                </button>
+              )}
+            </div>
+            {visibleDays.map((day, i) => {
               const isToday = isSameDay(day, new Date());
               const dayBh = bh[String(day.getDay())];
               const isClosed = !dayBh;
@@ -716,7 +892,7 @@ export default function AgendaPage() {
                   className={`py-2.5 text-center border-r border-nd-border/30 last:border-r-0 hover:bg-nd-surface/50 transition-colors ${isToday ? 'bg-nd-accent/5' : ''}`}
                 >
                   <p className={`text-[10px] uppercase tracking-wider ${isToday ? 'text-nd-accent font-bold' : 'text-nd-muted'}`}>
-                    {DAY_NAMES_SHORT[i]}
+                    {DAY_NAMES_SHORT[day.getDay()]}
                   </p>
                   <p className={`text-lg font-bold ${isToday ? 'text-nd-accent' : 'text-nd-heading'}`}>
                     {day.getDate()}
@@ -731,16 +907,16 @@ export default function AgendaPage() {
           </div>
 
           {/* Time grid */}
-          <div ref={gridRef} className="overflow-auto flex-1">
-            <div className="grid relative" style={{ gridTemplateColumns: '48px repeat(7, 1fr)' }}>
+          <div ref={gridRef} className="overflow-auto flex-1" {...gridTouchHandlers}>
+            <div className="grid relative" style={{ gridTemplateColumns: `48px repeat(${visibleColCount}, 1fr)` }}>
               {hours.map(hour => (
                 <div key={hour} className="contents">
-                  <div className="border-r border-nd-border/30 text-right pr-1.5 relative" style={{ height: `${SLOT_HEIGHT}px` }}>
+                  <div className="border-r border-nd-border/30 text-right pr-1.5 relative" style={{ height: `${slotHeight}px` }}>
                     <span className="text-[10px] text-nd-muted absolute -top-2 right-1.5">
                       {String(hour).padStart(2, '0')}:00
                     </span>
                   </div>
-                  {weekDays.map((day, di) => {
+                  {visibleDays.map((day, di) => {
                     const dayBh = bh[String(day.getDay())];
                     const isClosed = !dayBh;
                     const isOutside = dayBh ? (hour < parseHour(dayBh.open) || hour >= parseHour(dayBh.close)) : true;
@@ -754,7 +930,7 @@ export default function AgendaPage() {
                             ? isSameDay(day, new Date()) ? 'bg-nd-accent/[0.03]' : 'bg-white'
                             : isClosed ? 'bg-nd-surface/40' : 'bg-nd-surface/20'
                         }`}
-                        style={{ height: `${SLOT_HEIGHT}px` }}
+                        style={{ height: `${slotHeight}px` }}
                       />
                     );
                   })}
@@ -762,31 +938,34 @@ export default function AgendaPage() {
               ))}
 
               {/* Appointment blocks */}
-              {weekDays.map((day, di) => {
+              {visibleDays.map((day, di) => {
                 const dayAppts = getApptForDay(day);
                 return dayAppts.map(appt => {
                   const style = getApptStyle(appt);
-                  const colors = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
                   const isClosed = !!appt.closed_at;
+                  const svcName = apptServiceNames[appt.id];
                   return (
                     <div
                       key={appt.id}
-                      onClick={(e) => { e.stopPropagation(); isClosed ? openEdit(appt) : openEdit(appt); }}
-                      className={`absolute rounded-lg border px-1.5 py-1 overflow-hidden cursor-pointer hover:shadow-soft transition-shadow z-10 ${colors}`}
+                      onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
+                      className={`absolute rounded-lg border px-1.5 py-1 overflow-hidden cursor-pointer hover:shadow-soft transition-shadow z-10 ${
+                        isClosed ? 'bg-nd-success/10 border-nd-success/25' : 'bg-lime-50 border-lime-200'
+                      }`}
                       style={{
                         top: style.top,
                         height: style.height,
-                        left: `calc(48px + (100% - 48px) / 7 * ${di} + 2px)`,
-                        width: `calc((100% - 48px) / 7 - 4px)`,
+                        left: `calc(48px + (100% - 48px) / ${visibleColCount} * ${di} + 2px)`,
+                        width: `calc((100% - 48px) / ${visibleColCount} - 4px)`,
                       }}
                     >
-                      <p className="text-[11px] font-semibold truncate leading-tight">
+                      <p className="text-[10px] font-bold text-nd-heading truncate leading-tight">
                         {getApptDisplayName(appt)}
                       </p>
-                      <p className="text-[9px] opacity-70 truncate">
-                        {profMap[appt.professional_id] || ''} {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
+                      {svcName && <p className="text-[8px] text-nd-muted truncate">{svcName}</p>}
+                      <p className="text-[8px] text-lime-600 truncate">
+                        {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
                       </p>
-                      {isClosed && <Check className="w-3 h-3 absolute top-1 right-1 opacity-50" />}
+                      {isClosed && <Check className="w-3 h-3 absolute top-1 right-1 text-nd-success/50" />}
                     </div>
                   );
                 });
@@ -796,15 +975,16 @@ export default function AgendaPage() {
               {isCurrentWeek && (() => {
                 const now = new Date();
                 const mins = now.getHours() * 60 + now.getMinutes();
-                const top = (mins / 60) * SLOT_HEIGHT;
-                const dayIndex = now.getDay();
+                const top = (mins / 60) * slotHeight;
+                const dayIndex = now.getDay() - visibleDayOffset;
+                if (dayIndex < 0 || dayIndex >= visibleColCount) return null;
                 return (
                   <div
                     className="absolute h-0.5 bg-nd-danger z-20 pointer-events-none"
                     style={{
                       top: `${top}px`,
-                      left: `calc(48px + (100% - 48px) / 7 * ${dayIndex})`,
-                      width: `calc((100% - 48px) / 7)`,
+                      left: `calc(48px + (100% - 48px) / ${visibleColCount} * ${dayIndex})`,
+                      width: `calc((100% - 48px) / ${visibleColCount})`,
                     }}
                   >
                     <div className="w-2.5 h-2.5 rounded-full bg-nd-danger absolute -left-1 -top-1" />
@@ -814,87 +994,196 @@ export default function AgendaPage() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : viewMode === 'day' ? (
         /* ════ DAY VIEW ════ */
         <div className="card overflow-hidden flex-1 flex flex-col min-h-0">
-          <div ref={gridRef} className="overflow-auto flex-1">
+          {/* Day header with week strip */}
+          <div className="flex border-b border-nd-border/50 shrink-0 overflow-x-auto">
+            {weekDays.map((day, i) => {
+              const isToday = isSameDay(day, new Date());
+              const isSelected = isSameDay(day, currentDate);
+              const dayApptCount = getApptForDay(day).length;
+              return (
+                <button key={i} onClick={() => setCurrentDate(day)}
+                  className={`flex-1 min-w-[48px] py-2 text-center transition-colors ${isSelected ? 'bg-nd-accent/10 border-b-2 border-nd-accent' : 'hover:bg-nd-surface/50'}`}>
+                  <p className={`text-[10px] uppercase ${isToday ? 'text-nd-accent font-bold' : 'text-nd-muted'}`}>{DAY_NAMES_SHORT[i]}</p>
+                  <p className={`text-sm font-bold ${isToday ? 'text-nd-accent' : isSelected ? 'text-nd-heading' : 'text-nd-muted'}`}>{day.getDate()}</p>
+                  {dayApptCount > 0 && <span className="text-[9px] text-nd-accent font-medium">{dayApptCount}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div ref={gridRef} className="overflow-auto flex-1" {...gridTouchHandlers}>
             <div className="relative">
+              {/* Date label */}
+              <div className="sticky top-0 z-20 bg-nd-card/90 backdrop-blur-sm px-4 py-2 text-center border-b border-nd-border/20">
+                <span className="text-xs text-nd-muted capitalize">
+                  {currentDate.toLocaleDateString(locale, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                </span>
+              </div>
+
               {hours.map(hour => {
                 const dayBh = bh[String(currentDate.getDay())];
                 const isBusinessHour = dayBh ? (hour >= parseHour(dayBh.open) && hour < parseHour(dayBh.close)) : false;
+                const isShiftStart = dayBh && hour === parseHour(dayBh.open);
+                const isShiftEnd = dayBh && hour === parseHour(dayBh.close);
                 return (
-                  <div key={hour} className="flex border-b border-nd-border/20" style={{ height: `${SLOT_HEIGHT}px` }}>
-                    <div className="w-14 shrink-0 py-3 text-right pr-3 border-r border-nd-border/30">
-                      <span className="text-xs text-nd-muted">{String(hour).padStart(2, '0')}:00</span>
+                  <div key={hour} className="relative">
+                    {isShiftStart && (
+                      <div className="absolute inset-x-0 top-0 z-10 flex items-center px-4 pointer-events-none" style={{ left: '56px' }}>
+                        <div className="h-px flex-1 bg-nd-accent/30 bg-[repeating-linear-gradient(90deg,transparent,transparent_4px,var(--tw-gradient-from)_4px,var(--tw-gradient-from)_8px)]" />
+                        <span className="text-[9px] text-nd-accent/60 uppercase tracking-wider px-2 font-medium">{t.shiftStart || 'INÍCIO DO TURNO'}</span>
+                        <div className="h-px flex-1 bg-nd-accent/30 bg-[repeating-linear-gradient(90deg,transparent,transparent_4px,var(--tw-gradient-from)_4px,var(--tw-gradient-from)_8px)]" />
+                      </div>
+                    )}
+                    {isShiftEnd && (
+                      <div className="absolute inset-x-0 top-0 z-10 flex items-center px-4 pointer-events-none" style={{ left: '56px' }}>
+                        <div className="h-px flex-1 bg-nd-muted/30 bg-[repeating-linear-gradient(90deg,transparent,transparent_4px,var(--tw-gradient-from)_4px,var(--tw-gradient-from)_8px)]" />
+                        <span className="text-[9px] text-nd-muted/60 uppercase tracking-wider px-2 font-medium">{t.shiftEnd || 'FIM DO TURNO'}</span>
+                        <div className="h-px flex-1 bg-nd-muted/30 bg-[repeating-linear-gradient(90deg,transparent,transparent_4px,var(--tw-gradient-from)_4px,var(--tw-gradient-from)_8px)]" />
+                      </div>
+                    )}
+                    <div className="flex border-b border-nd-border/20" style={{ height: `${slotHeight}px` }}>
+                      <div className="w-14 shrink-0 text-right pr-3 border-r border-nd-border/30 relative">
+                        <span className="text-[10px] text-nd-muted absolute -top-2 right-3">{String(hour).padStart(2, '0')}:00</span>
+                        {hour === 12 && <span className="text-[8px] text-nd-muted/50 absolute top-3 right-3">meio-dia</span>}
+                      </div>
+                      <div
+                        className={`flex-1 cursor-pointer hover:bg-nd-accent/5 transition-colors ${isBusinessHour ? 'bg-white' : 'bg-nd-surface/20'}`}
+                        onClick={() => openCreateAt(currentDate, hour)}
+                      />
                     </div>
-                    <div
-                      className={`flex-1 cursor-pointer hover:bg-nd-accent/5 transition-colors ${isBusinessHour ? 'bg-white' : 'bg-nd-surface/20'}`}
-                      onClick={() => openCreateAt(currentDate, hour)}
-                    />
                   </div>
                 );
               })}
 
-              {/* Absolutely positioned appointments */}
+              {/* Appointments — green cards */}
               {getApptForDay(currentDate).map(appt => {
                 const style = getApptStyle(appt);
-                const colors = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
                 const isClosed = !!appt.closed_at;
+                const svcName = apptServiceNames[appt.id];
+                const dur = formatDuration(appt.starts_at, appt.ends_at);
                 return (
                   <div
                     key={appt.id}
                     onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
-                    className={`absolute rounded-xl border px-4 py-3 cursor-pointer hover:shadow-soft transition-shadow z-10 ${colors}`}
-                    style={{
-                      top: style.top,
-                      height: style.height,
-                      left: '56px',
-                      right: '4px',
-                    }}
+                    className={`absolute rounded-xl border cursor-pointer hover:shadow-md transition-shadow z-10 overflow-hidden ${
+                      isClosed
+                        ? 'bg-nd-success/10 border-nd-success/25'
+                        : 'bg-lime-50 border-lime-200'
+                    }`}
+                    style={{ top: style.top, height: style.height, left: '58px', right: '6px' }}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <p className="text-sm font-semibold truncate">
+                    <div className="px-3 py-2 h-full flex flex-col">
+                      <div className="flex items-start justify-between gap-1">
+                        <p className="text-sm font-bold text-nd-heading truncate leading-tight">
                           {getApptDisplayName(appt)}
                         </p>
-                        {isClosed && <Check className="w-3.5 h-3.5 text-nd-success shrink-0" />}
-                      </div>
-                      <span className="text-[11px] shrink-0 font-medium">
-                        {formatTime(appt.starts_at)} - {formatTime(appt.ends_at)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1">
-                      {profMap[appt.professional_id] && (
-                        <p className="text-xs opacity-70 flex items-center gap-1">
-                          <User className="w-3 h-3" /> {profMap[appt.professional_id]}
-                        </p>
-                      )}
-                      {appt.total_amount > 0 && (
-                        <p className="text-xs font-medium">{formatCurrency(appt.total_amount)}</p>
-                      )}
-                      {isClosed && appt.payment_method && (
-                        <span className="text-[10px] opacity-60">
-                          {PAYMENT_METHODS.find(p => p.value === appt.payment_method)?.label}
+                        <span className="text-[11px] text-nd-muted shrink-0 font-medium">
+                          {formatTime(appt.starts_at)} - {formatTime(appt.ends_at)}
                         </span>
+                      </div>
+                      {svcName && (
+                        <p className="text-xs text-nd-muted mt-0.5 truncate">{svcName}</p>
+                      )}
+                      <div className="flex items-center gap-2 mt-auto">
+                        {profMap[appt.professional_id] && (
+                          <span className="text-[10px] text-nd-muted">{profMap[appt.professional_id]}</span>
+                        )}
+                        {appt.total_amount > 0 && (
+                          <span className="text-[10px] font-bold text-nd-heading">{formatCurrency(appt.total_amount)}</span>
+                        )}
+                        <span className="ml-auto text-[9px] bg-lime-200/70 text-lime-700 px-1.5 py-0.5 rounded-full font-medium">{dur}</span>
+                        {isClosed && <Check className="w-3 h-3 text-nd-success" />}
+                      </div>
+                      {!isClosed && appt.status !== 'cancelled' && (
+                        <div className="flex gap-2 mt-1">
+                          {appt.advance_amount > 0 && (
+                            <span className="text-[9px] text-nd-accent">{t.deposit}: {formatCurrency(appt.advance_amount)}</span>
+                          )}
+                          <button onClick={(e) => { e.stopPropagation(); openCloseShift(appt); }}
+                            className="text-[10px] font-medium text-nd-success hover:underline ml-auto">{t.closeShift}</button>
+                        </div>
                       )}
                     </div>
-                    {!isClosed && appt.status !== 'cancelled' && (
-                      <div className="flex gap-2 mt-2">
-                        {appt.status === 'scheduled' && (
-                          <button onClick={(e) => { e.stopPropagation(); openConfirmAdvance(appt); }}
-                            className="text-[11px] font-medium text-blue-600 hover:underline">{t.confirm}</button>
-                        )}
-                        {appt.advance_amount > 0 && !isClosed && (
-                          <span className="text-[10px] text-nd-accent">{t.deposit}: {formatCurrency(appt.advance_amount)}</span>
-                        )}
-                        <button onClick={(e) => { e.stopPropagation(); openCloseShift(appt); }}
-                          className="text-[11px] font-medium text-nd-success hover:underline">{t.closeShift}</button>
-                      </div>
-                    )}
                   </div>
                 );
               })}
+
+              {/* Current time indicator */}
+              {isSameDay(currentDate, new Date()) && (() => {
+                const now = new Date();
+                const mins = now.getHours() * 60 + now.getMinutes();
+                const top = (mins / 60) * slotHeight + 32; // +32 for sticky header
+                return (
+                  <div className="absolute h-0.5 bg-nd-danger z-20 pointer-events-none" style={{ top: `${top}px`, left: '56px', right: 0 }}>
+                    <div className="w-2.5 h-2.5 rounded-full bg-nd-danger absolute -left-1 -top-1" />
+                  </div>
+                );
+              })()}
             </div>
+          </div>
+        </div>
+      ) : (
+        /* ════ MONTH VIEW ════ */
+        <div className="card overflow-hidden flex-1 flex flex-col min-h-0" {...gridTouchHandlers}>
+          {/* Day headers */}
+          <div className="grid grid-cols-7 border-b border-nd-border/50 shrink-0">
+            {DAY_NAMES_SHORT.map((d, i) => (
+              <div key={i} className="text-center py-2 text-[10px] uppercase tracking-wider text-nd-muted font-medium">{d}</div>
+            ))}
+          </div>
+          <div className="overflow-auto flex-1">
+            {monthWeeks.map((week, wi) => {
+              const dayBhWeek = week.map(d => bh[String(d.getDay())]);
+              return (
+                <div key={wi} className="grid grid-cols-7 border-b border-nd-border/10 min-h-[100px]">
+                  {week.map((day, di) => {
+                    const isToday = isSameDay(day, new Date());
+                    const isCurrentMonth = day.getMonth() === currentDate.getMonth();
+                    const isClosed = !dayBhWeek[di];
+                    const dayAppts = getApptForDay(day);
+                    return (
+                      <div
+                        key={di}
+                        className={`border-r border-nd-border/10 last:border-r-0 p-1 cursor-pointer hover:bg-nd-accent/5 transition-colors ${
+                          !isCurrentMonth ? 'opacity-40' : ''
+                        } ${isToday ? 'bg-nd-accent/5' : ''}`}
+                        onClick={() => { setCurrentDate(day); setViewMode('day'); }}
+                      >
+                        <div className={`text-xs font-bold mb-0.5 ${isToday ? 'text-white bg-nd-accent rounded-full w-6 h-6 flex items-center justify-center mx-auto' : 'text-nd-heading text-center'}`}>
+                          {day.getDate()}
+                        </div>
+                        {isClosed && isCurrentMonth && (
+                          <p className="text-[8px] text-nd-danger/50 text-center uppercase">{t.closedDay}</p>
+                        )}
+                        <div className="space-y-0.5">
+                          {dayAppts.slice(0, 4).map(appt => {
+                            const hour = new Date(appt.starts_at).getHours();
+                            const isCl = !!appt.closed_at;
+                            return (
+                              <div key={appt.id}
+                                className={`text-[9px] leading-tight truncate px-0.5 rounded ${
+                                  isCl ? 'text-nd-success/70' : 'text-lime-700 bg-lime-50'
+                                }`}
+                                onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
+                              >
+                                <span className="font-bold">{hour}</span>{' '}
+                                <span>{getApptDisplayName(appt).split(' ')[0]}</span>
+                              </div>
+                            );
+                          })}
+                          {dayAppts.length > 4 && (
+                            <p className="text-[8px] text-nd-muted text-center">+{dayAppts.length - 4}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

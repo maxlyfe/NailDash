@@ -7,7 +7,7 @@ import { useSupabase } from '@/lib/supabase/use-supabase';
 import {
   CalendarDays, DollarSign, TrendingUp, Users,
   ArrowUpRight, Clock, Sparkles, Loader2,
-  CheckCircle2, CircleDot,
+  CheckCircle2, CircleDot, BarChart3,
 } from 'lucide-react';
 
 type Stats = {
@@ -51,6 +51,8 @@ export default function DashboardPage() {
     appointmentsToday: 0, appointmentsOpen: 0, appointmentsClosed: 0,
   });
   const [recent, setRecent] = useState<RecentTransaction[]>([]);
+  const [weeklyData, setWeeklyData] = useState<{ label: string; completed: number; pending: number; revenue: number; pendingRevenue: number }[]>([]);
+  const [activeBar, setActiveBar] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
@@ -62,7 +64,10 @@ export default function DashboardPage() {
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    const [salesRes, clientsRes, recentRes, apptsRes] = await Promise.all([
+    const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+    const monthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const [salesRes, clientsRes, recentRes, apptsRes, monthApptsRes] = await Promise.all([
       supabase
         .from('transactions')
         .select('total_amount')
@@ -87,6 +92,13 @@ export default function DashboardPage() {
         .gte('starts_at', todayStart.toISOString())
         .lte('starts_at', todayEnd.toISOString())
         .neq('status', 'cancelled'),
+      supabase
+        .from('appointments')
+        .select('id, starts_at, status, closed_at, total_amount')
+        .eq('salon_id', salon.id)
+        .gte('starts_at', monthStart.toISOString())
+        .lte('starts_at', monthEnd.toISOString())
+        .neq('status', 'cancelled'),
     ]);
 
     const todaySales = salesRes.data || [];
@@ -108,6 +120,35 @@ export default function DashboardPage() {
       appointmentsClosed,
     });
     setRecent((recentRes.data || []) as unknown as RecentTransaction[]);
+
+    // Process monthly appointments into weekly buckets
+    const monthAppts = (monthApptsRes.data || []) as any[];
+    const weeks: { label: string; completed: number; pending: number; revenue: number; pendingRevenue: number }[] = [];
+    // Get week boundaries for the month
+    const d = new Date(monthStart);
+    while (d <= monthEnd) {
+      const wStart = new Date(d);
+      const wEnd = new Date(d);
+      wEnd.setDate(wEnd.getDate() + 6);
+      if (wEnd > monthEnd) wEnd.setTime(monthEnd.getTime());
+      const label = `${wStart.getDate()}-${wEnd.getDate()}`;
+      const weekAppts = monthAppts.filter((a: any) => {
+        const ad = new Date(a.starts_at);
+        return ad >= wStart && ad <= wEnd;
+      });
+      const completed = weekAppts.filter((a: any) => a.closed_at || a.status === 'completed').length;
+      const pending = weekAppts.length - completed;
+      const revenue = weekAppts
+        .filter((a: any) => a.closed_at || a.status === 'completed')
+        .reduce((s: number, a: any) => s + (a.total_amount || 0), 0);
+      const pendingRevenue = weekAppts
+        .filter((a: any) => !a.closed_at && a.status !== 'completed')
+        .reduce((s: number, a: any) => s + (a.total_amount || 0), 0);
+      weeks.push({ label, completed, pending, revenue, pendingRevenue });
+      d.setDate(d.getDate() + 7);
+    }
+    setWeeklyData(weeks);
+
     setLoading(false);
   }, [salon?.id]);
 
@@ -155,6 +196,93 @@ export default function DashboardPage() {
           );
         })}
       </div>
+
+      {/* Monthly Chart */}
+      {!loading && weeklyData.length > 0 && (() => {
+        const maxVal = Math.max(...weeklyData.map(w => w.completed + w.pending), 1);
+        const chartH = 140;
+        const monthName = new Date().toLocaleDateString(locale, { month: 'long' });
+        return (
+          <div className="card p-5">
+            <div className="flex items-center gap-2.5 mb-4">
+              <BarChart3 className="w-4 h-4 text-nd-accent" />
+              <h2 className="text-sm font-semibold text-nd-heading capitalize">{t.monthlyOverview} — {monthName}</h2>
+            </div>
+            <div className="flex items-center gap-4 mb-3 text-[11px] text-nd-muted">
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-nd-success/70" />{t.closed}</span>
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-nd-accent/30" />{t.forecast}</span>
+            </div>
+            {/* Bar chart */}
+            <div className="relative pt-24">
+              <div className="flex items-end gap-1.5 sm:gap-4 justify-around" style={{ height: `${chartH + 40}px` }}
+                onMouseLeave={() => setActiveBar(null)}>
+                {weeklyData.map((w, i) => {
+                  const total = w.completed + w.pending;
+                  const completedPct = total > 0 ? (w.completed / maxVal) * 100 : 0;
+                  const pendingPct = total > 0 ? (w.pending / maxVal) * 100 : 0;
+                  const isActive = activeBar === i;
+                  const isFirst = i === 0;
+                  const isLast = i === weeklyData.length - 1;
+                  const tooltipAlign = isFirst ? 'left-0' : isLast ? 'right-0' : 'left-1/2 -translate-x-1/2';
+                  const arrowAlign = isFirst ? 'left-4' : isLast ? 'right-4' : 'left-1/2 -translate-x-1/2';
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center relative min-w-0"
+                      onMouseEnter={() => setActiveBar(i)}
+                      onTouchStart={() => setActiveBar(isActive ? null : i)}>
+                      {/* Tooltip */}
+                      {isActive && (
+                        <div className={`absolute -top-2 ${tooltipAlign} -translate-y-full z-20
+                          bg-nd-heading text-white rounded-xl px-3 py-2 text-[10px] sm:text-[11px] shadow-lg whitespace-nowrap
+                          pointer-events-none animate-fade-in`}>
+                          <div className="font-bold mb-1">{t.weekView} {w.label}</div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-sm bg-nd-success" />
+                              {t.closed}: {w.completed}
+                            </span>
+                            <span className="font-bold text-green-300">{formatCurrency(w.revenue)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 mt-0.5">
+                            <span className="flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-sm bg-nd-accent/50" />
+                              {t.forecast}: {w.pending}
+                            </span>
+                            <span className="font-medium text-amber-300">{formatCurrency(w.pendingRevenue)}</span>
+                          </div>
+                          <div className="mt-1 pt-1 border-t border-white/20 flex justify-between">
+                            <span className="font-medium">{t.total}</span>
+                            <span className="font-bold">{formatCurrency(w.revenue + w.pendingRevenue)}</span>
+                          </div>
+                          <div className={`absolute ${arrowAlign} top-full w-0 h-0
+                            border-l-[5px] border-r-[5px] border-t-[5px]
+                            border-l-transparent border-r-transparent border-t-nd-heading`} />
+                        </div>
+                      )}
+                      {/* Bars container */}
+                      <div className="flex gap-0.5 sm:gap-1 items-end w-full" style={{ height: `${chartH}px` }}>
+                        {/* Completed bar */}
+                        <div className={`flex-1 rounded-t-md transition-all duration-200 ${isActive ? 'bg-nd-success' : 'bg-nd-success/70'}`}
+                          style={{ height: `${Math.max(completedPct, total > 0 ? 4 : 0)}%` }} />
+                        {/* Pending bar */}
+                        <div className={`flex-1 rounded-t-md transition-all duration-200 ${isActive ? 'bg-nd-accent/50' : 'bg-nd-accent/25'}`}
+                          style={{ height: `${Math.max(pendingPct, w.pending > 0 ? 4 : 0)}%` }} />
+                      </div>
+                      {/* Week label */}
+                      <span className={`text-[9px] sm:text-[10px] mt-1 transition-colors ${isActive ? 'text-nd-heading font-bold' : 'text-nd-muted'}`}>
+                        {w.label}
+                      </span>
+                      {/* Total count */}
+                      <span className={`text-[8px] sm:text-[9px] ${isActive ? 'text-nd-accent font-medium' : 'text-nd-muted/60'}`}>
+                        {total}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Content Grid */}
       <div className="grid lg:grid-cols-3 gap-4">

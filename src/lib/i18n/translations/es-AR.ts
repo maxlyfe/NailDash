@@ -58,6 +58,8 @@ const esAR: Translations = {
   open: 'Abiertos',
   closed: 'Cerrados',
   avgTicket: 'Ticket promedio',
+  monthlyOverview: 'Resumen mensual',
+  forecast: 'Previsión',
   recentSales: 'Últimas Ventas',
   seeAll: 'Ver todo',
   noSalesRecorded: 'Sin ventas registradas',
@@ -102,8 +104,11 @@ const esAR: Translations = {
   // day view
   dayView: 'Día',
   weekView: 'Semana',
+  monthView: 'Mes',
   today: 'Hoy',
   // close shift
+  shiftStart: 'INICIO DEL TURNO',
+  shiftEnd: 'FIN DEL TURNO',
   closeShift: 'Cerrar turno',
   paidAmount: 'Monto pagado',
   paymentMethod: 'Forma de pago',

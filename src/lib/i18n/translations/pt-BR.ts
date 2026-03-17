@@ -56,6 +56,8 @@ const ptBR = {
   open: 'Abertos',
   closed: 'Fechados',
   avgTicket: 'Ticket médio',
+  monthlyOverview: 'Visão mensal',
+  forecast: 'Previsão',
   recentSales: 'Últimas Vendas',
   seeAll: 'Ver tudo',
   noSalesRecorded: 'Sem vendas registradas',
@@ -100,8 +102,11 @@ const ptBR = {
   // day view
   dayView: 'Dia',
   weekView: 'Semana',
+  monthView: 'Mês',
   today: 'Hoje',
   // close shift
+  shiftStart: 'INÍCIO DO TURNO',
+  shiftEnd: 'FIM DO TURNO',
   closeShift: 'Fechar turno',
   paidAmount: 'Valor pago',
   paymentMethod: 'Forma de pagamento',
