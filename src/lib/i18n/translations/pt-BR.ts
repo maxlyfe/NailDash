@@ -52,6 +52,8 @@ const ptBR = {
   greeting_afternoon: 'Boa tarde',
   greeting_evening: 'Boa noite',
   revenueToday: 'Receita hoje',
+  revenueTurnos: 'Turnos',
+  revenueAdvances: 'Adiantamentos',
   shiftsToday: 'Turnos hoje',
   open: 'Abertos',
   closed: 'Fechados',

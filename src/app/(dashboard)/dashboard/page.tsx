@@ -12,6 +12,8 @@ import {
 
 type Stats = {
   revenueToday: number;
+  revenueTurnos: number;
+  revenueAdvances: number;
   totalClients: number;
   avgTicket: number;
   appointmentsToday: number;
@@ -47,7 +49,8 @@ export default function DashboardPage() {
   }, [t, locale]);
 
   const [stats, setStats] = useState<Stats>({
-    revenueToday: 0, totalClients: 0, avgTicket: 0,
+    revenueToday: 0, revenueTurnos: 0, revenueAdvances: 0,
+    totalClients: 0, avgTicket: 0,
     appointmentsToday: 0, appointmentsOpen: 0, appointmentsClosed: 0,
   });
   const [recent, setRecent] = useState<RecentTransaction[]>([]);
@@ -70,7 +73,7 @@ export default function DashboardPage() {
     const [salesRes, clientsRes, recentRes, apptsRes, monthApptsRes] = await Promise.all([
       supabase
         .from('transactions')
-        .select('total_amount')
+        .select('total_amount, category')
         .eq('salon_id', salon.id)
         .eq('type', 'sale')
         .gte('transaction_date', todayStart.toISOString()),
@@ -103,6 +106,8 @@ export default function DashboardPage() {
 
     const todaySales = salesRes.data || [];
     const revenueToday = todaySales.reduce((s: number, t: any) => s + t.total_amount, 0);
+    const revenueTurnos = todaySales.filter((t: any) => t.category === 'turno').reduce((s: number, t: any) => s + t.total_amount, 0);
+    const revenueAdvances = todaySales.filter((t: any) => t.category === 'adiantamento').reduce((s: number, t: any) => s + t.total_amount, 0);
     const totalClients = clientsRes.count || 0;
     const avgTicket = todaySales.length > 0 ? revenueToday / todaySales.length : 0;
 
@@ -113,6 +118,8 @@ export default function DashboardPage() {
 
     setStats({
       revenueToday,
+      revenueTurnos,
+      revenueAdvances,
       totalClients,
       avgTicket,
       appointmentsToday,
@@ -158,7 +165,6 @@ export default function DashboardPage() {
     v.toLocaleString(locale, { style: 'currency', currency: t.currency });
 
   const STATS_CONFIG = [
-    { label: t.revenueToday, value: formatCurrency(stats.revenueToday), icon: DollarSign, accent: 'text-nd-success bg-nd-success/10' },
     { label: t.shiftsToday, value: stats.appointmentsToday.toString(), icon: CalendarDays, accent: 'text-nd-accent bg-nd-accent/10' },
     { label: t.open, value: stats.appointmentsOpen.toString(), icon: CircleDot, accent: 'text-nd-warning bg-nd-warning/10' },
     { label: t.closed, value: stats.appointmentsClosed.toString(), icon: CheckCircle2, accent: 'text-nd-success bg-nd-success/10' },
@@ -180,6 +186,39 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* Revenue card with breakdown */}
+        <div className="card-glow p-4 group col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between mb-2">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-nd-success bg-nd-success/10">
+              <DollarSign className="w-4 h-4" />
+            </div>
+            {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-nd-muted/30" />}
+          </div>
+          <p className="text-xl font-bold text-nd-heading">{loading ? '...' : formatCurrency(stats.revenueToday)}</p>
+          <p className="text-[11px] text-nd-muted mt-0.5">{t.revenueToday}</p>
+          {!loading && (stats.revenueTurnos > 0 || stats.revenueAdvances > 0) && (
+            <div className="mt-2 pt-2 border-t border-nd-border/50 space-y-1">
+              {stats.revenueTurnos > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-nd-muted flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-nd-success" />
+                    {t.revenueTurnos}
+                  </span>
+                  <span className="text-[10px] font-semibold text-nd-success">{formatCurrency(stats.revenueTurnos)}</span>
+                </div>
+              )}
+              {stats.revenueAdvances > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-nd-muted flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-nd-accent" />
+                    {t.revenueAdvances}
+                  </span>
+                  <span className="text-[10px] font-semibold text-nd-accent">{formatCurrency(stats.revenueAdvances)}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         {STATS_CONFIG.map((stat) => {
           const Icon = stat.icon;
           return (

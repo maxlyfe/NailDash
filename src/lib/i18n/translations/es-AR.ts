@@ -54,6 +54,8 @@ const esAR: Translations = {
   greeting_afternoon: 'Buenas tardes',
   greeting_evening: 'Buenas noches',
   revenueToday: 'Ingreso hoy',
+  revenueTurnos: 'Turnos',
+  revenueAdvances: 'Señas',
   shiftsToday: 'Turnos hoy',
   open: 'Abiertos',
   closed: 'Cerrados',
