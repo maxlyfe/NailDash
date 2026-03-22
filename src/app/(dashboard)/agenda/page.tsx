@@ -670,7 +670,7 @@ export default function AgendaPage() {
       tips: extras,
       category: 'turno',
       [`payment_${closeForm.payment_method}`]: Math.max(remaining, 0),
-      transaction_date: new Date().toISOString(),
+      transaction_date: selected.starts_at,
       registered_at: new Date().toISOString(),
     });
 
