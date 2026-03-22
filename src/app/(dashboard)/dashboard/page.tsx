@@ -114,7 +114,7 @@ export default function DashboardPage() {
 
     const todayAppts = apptsRes.data || [];
     const appointmentsToday = todayAppts.length;
-    const appointmentsClosed = todayAppts.filter((a: any) => a.closed_at || a.status === 'completed').length;
+    const appointmentsClosed = todayAppts.filter((a: any) => a.status === 'completed').length;
     const appointmentsOpen = appointmentsToday - appointmentsClosed;
 
     setStats({
@@ -144,13 +144,13 @@ export default function DashboardPage() {
         const ad = new Date(a.starts_at);
         return ad >= wStart && ad <= wEnd;
       });
-      const completed = weekAppts.filter((a: any) => a.closed_at || a.status === 'completed').length;
+      const completed = weekAppts.filter((a: any) => a.status === 'completed').length;
       const pending = weekAppts.length - completed;
       const revenue = weekAppts
-        .filter((a: any) => a.closed_at || a.status === 'completed')
+        .filter((a: any) => a.status === 'completed')
         .reduce((s: number, a: any) => s + (a.total_amount || 0), 0);
       const pendingRevenue = weekAppts
-        .filter((a: any) => !a.closed_at && a.status !== 'completed')
+        .filter((a: any) => a.status !== 'completed')
         .reduce((s: number, a: any) => s + (a.total_amount || 0), 0);
       weeks.push({ label, completed, pending, revenue, pendingRevenue });
       d.setDate(d.getDate() + 7);

@@ -963,14 +963,14 @@ export default function AgendaPage() {
                 const dayAppts = getApptForDay(day);
                 return dayAppts.map(appt => {
                   const style = getApptStyle(appt);
-                  const isClosed = !!appt.closed_at;
+                  const isCompleted = appt.status === 'completed';
                   const svcName = apptServiceNames[appt.id];
                   return (
                     <div
                       key={appt.id}
                       onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
                       className={`absolute rounded-lg border px-1.5 py-1 overflow-hidden cursor-pointer hover:shadow-soft transition-shadow z-10 ${
-                        isClosed ? 'bg-nd-success/10 border-nd-success/25' : 'bg-lime-50 border-lime-200'
+                        isCompleted ? 'bg-nd-success/10 border-nd-success/25' : 'bg-lime-50 border-lime-200'
                       }`}
                       style={{
                         top: style.top,
@@ -986,7 +986,7 @@ export default function AgendaPage() {
                       <p className="text-[8px] text-lime-600 truncate">
                         {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
                       </p>
-                      {isClosed && <Check className="w-3 h-3 absolute top-1 right-1 text-nd-success/50" />}
+                      {isCompleted && <Check className="w-3 h-3 absolute top-1 right-1 text-nd-success/50" />}
                     </div>
                   );
                 });
@@ -1076,7 +1076,7 @@ export default function AgendaPage() {
               {/* Appointments — green cards */}
               {getApptForDay(currentDate).map(appt => {
                 const style = getApptStyle(appt);
-                const isClosed = !!appt.closed_at;
+                const isCompleted = appt.status === 'completed';
                 const svcName = apptServiceNames[appt.id];
                 const dur = formatDuration(appt.starts_at, appt.ends_at);
                 return (
@@ -1084,7 +1084,7 @@ export default function AgendaPage() {
                     key={appt.id}
                     onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
                     className={`absolute rounded-xl border cursor-pointer hover:shadow-md transition-shadow z-10 overflow-hidden ${
-                      isClosed
+                      isCompleted
                         ? 'bg-nd-success/10 border-nd-success/25'
                         : 'bg-lime-50 border-lime-200'
                     }`}
@@ -1110,9 +1110,9 @@ export default function AgendaPage() {
                           <span className="text-[10px] font-bold text-nd-heading">{formatCurrency(appt.total_amount)}</span>
                         )}
                         <span className="ml-auto text-[9px] bg-lime-200/70 text-lime-700 px-1.5 py-0.5 rounded-full font-medium">{dur}</span>
-                        {isClosed && <Check className="w-3 h-3 text-nd-success" />}
+                        {isCompleted && <Check className="w-3 h-3 text-nd-success" />}
                       </div>
-                      {!isClosed && appt.status !== 'cancelled' && (
+                      {!isCompleted && appt.status !== 'cancelled' && (
                         <div className="flex gap-2 mt-1">
                           {appt.advance_amount > 0 && (
                             <span className="text-[9px] text-nd-accent">{t.deposit}: {formatCurrency(appt.advance_amount)}</span>
