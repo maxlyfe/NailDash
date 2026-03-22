@@ -739,6 +739,13 @@ export default function AgendaPage() {
     return sum + (svc?.price || 0);
   }, 0);
 
+  // Auto-fill advance with 50% when services change (create mode only)
+  useEffect(() => {
+    if (modal !== 'create') return;
+    const half = selectedServicesTotal > 0 ? (Math.round(selectedServicesTotal * 0.5 * 100) / 100).toString() : '0';
+    setForm(f => ({ ...f, advance_amount: half }));
+  }, [selectedServicesTotal, modal]);
+
   const formatCurrency = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: t.currency });
   const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 
