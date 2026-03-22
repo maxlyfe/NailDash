@@ -970,7 +970,7 @@ export default function AgendaPage() {
                       key={appt.id}
                       onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
                       className={`absolute rounded-lg border px-1.5 py-1 overflow-hidden cursor-pointer hover:shadow-soft transition-shadow z-10 ${
-                        isCompleted ? 'bg-nd-success/10 border-nd-success/25' : 'bg-lime-50 border-lime-200'
+                        isCompleted ? 'bg-nd-success/10 border-nd-success/25' : appt.status === 'scheduled' ? 'bg-nd-accent/15 border-nd-accent/30' : 'bg-lime-50 border-lime-200'
                       }`}
                       style={{
                         top: style.top,
@@ -983,7 +983,7 @@ export default function AgendaPage() {
                         {getApptDisplayName(appt)}
                       </p>
                       {svcName && <p className="text-[8px] text-nd-muted truncate">{svcName}</p>}
-                      <p className="text-[8px] text-lime-600 truncate">
+                      <p className={`text-[8px] truncate ${appt.status === 'scheduled' ? 'text-nd-accent' : 'text-lime-600'}`}>
                         {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
                       </p>
                       {isCompleted && <Check className="w-3 h-3 absolute top-1 right-1 text-nd-success/50" />}
@@ -1086,6 +1086,8 @@ export default function AgendaPage() {
                     className={`absolute rounded-xl border cursor-pointer hover:shadow-md transition-shadow z-10 overflow-hidden ${
                       isCompleted
                         ? 'bg-nd-success/10 border-nd-success/25'
+                        : appt.status === 'scheduled'
+                        ? 'bg-nd-accent/15 border-nd-accent/30'
                         : 'bg-lime-50 border-lime-200'
                     }`}
                     style={{ top: style.top, height: style.height, left: '58px', right: '6px' }}
@@ -1109,7 +1111,7 @@ export default function AgendaPage() {
                         {appt.total_amount > 0 && (
                           <span className="text-[10px] font-bold text-nd-heading">{formatCurrency(appt.total_amount)}</span>
                         )}
-                        <span className="ml-auto text-[9px] bg-lime-200/70 text-lime-700 px-1.5 py-0.5 rounded-full font-medium">{dur}</span>
+                        <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-medium ${appt.status === 'scheduled' ? 'bg-nd-accent/20 text-nd-accent' : 'bg-lime-200/70 text-lime-700'}`}>{dur}</span>
                         {isCompleted && <Check className="w-3 h-3 text-nd-success" />}
                       </div>
                       {!isCompleted && appt.status !== 'cancelled' && (
