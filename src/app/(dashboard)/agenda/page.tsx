@@ -439,8 +439,14 @@ export default function AgendaPage() {
     // Always use fresh data from appointments array
     const fresh = appointments.find(a => a.id === appt.id) || appt;
     setSelected(fresh);
+    // Suggest 50% of total if no advance paid yet
+    const suggestedAmount = fresh.advance_amount > 0
+      ? fresh.advance_amount
+      : fresh.total_amount > 0
+      ? Math.round(fresh.total_amount * 0.5 * 100) / 100
+      : 0;
     setAdvanceForm({
-      amount: String(fresh.advance_amount || 0),
+      amount: String(suggestedAmount),
       payment_method: fresh.advance_payment_method || 'pix',
     });
     setModal('confirm_advance');
@@ -1376,7 +1382,8 @@ export default function AgendaPage() {
                         <label className="text-[11px] text-nd-muted mb-1 block">{t.paidAmount} ({t.currencySymbol})</label>
                         <input type="number" value={form.advance_amount}
                           onChange={e => setForm(f => ({ ...f, advance_amount: e.target.value }))}
-                          min="0" step="0.01" placeholder="0,00"
+                          min="0" step="0.01"
+                          placeholder={selectedServicesTotal > 0 ? `${(selectedServicesTotal * 0.5).toFixed(2)}` : '0,00'}
                           className="input-field !bg-nd-surface/30 text-sm font-semibold" />
                       </div>
                       <div>
