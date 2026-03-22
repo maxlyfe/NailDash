@@ -1194,11 +1194,11 @@ export default function AgendaPage() {
                         <div className="space-y-0.5">
                           {dayAppts.slice(0, 4).map(appt => {
                             const hour = new Date(appt.starts_at).getHours();
-                            const isCl = !!appt.closed_at;
+                            const isCl = appt.status === 'completed';
                             return (
                               <div key={appt.id}
                                 className={`text-[9px] leading-tight truncate px-0.5 rounded ${
-                                  isCl ? 'text-nd-success/70' : 'text-lime-700 bg-lime-50'
+                                  isCl ? 'text-nd-success/70' : appt.status === 'scheduled' ? 'text-nd-accent bg-nd-accent/10' : 'text-lime-700 bg-lime-50'
                                 }`}
                                 onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
                               >
