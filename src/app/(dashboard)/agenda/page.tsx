@@ -206,7 +206,10 @@ export default function AgendaPage() {
       setWeekPage(pendingWeekPageRef.current);
       pendingWeekPageRef.current = null;
     } else {
-      setWeekPage(0);
+      // Auto-select page based on today's position in the week
+      const now = new Date();
+      const todayIdx = weekDays.findIndex(d => isSameDay(d, now));
+      setWeekPage(todayIdx >= 4 ? 1 : 0);
     }
   }, [weekStart.getTime()]);
 
