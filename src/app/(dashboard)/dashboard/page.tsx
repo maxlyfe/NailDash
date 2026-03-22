@@ -70,7 +70,7 @@ export default function DashboardPage() {
     const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
     const monthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 0, 23, 59, 59, 999);
 
-    const [salesRes, clientsRes, recentRes, apptsRes, monthApptsRes] = await Promise.all([
+    const [salesRes, clientsRes, recentRes, apptsRes, monthApptsRes, pendingAdvRes] = await Promise.all([
       supabase
         .from('transactions')
         .select('total_amount, category')
@@ -102,10 +102,22 @@ export default function DashboardPage() {
         .gte('starts_at', monthStart.toISOString())
         .lte('starts_at', monthEnd.toISOString())
         .neq('status', 'cancelled'),
+      // Pending advances: appointments with advance that are NOT completed
+      supabase
+        .from('appointments')
+        .select('advance_amount')
+        .eq('salon_id', salon.id)
+        .gt('advance_amount', 0)
+        .neq('status', 'completed')
+        .neq('status', 'cancelled')
+        .gte('starts_at', todayStart.toISOString())
+        .lte('starts_at', todayEnd.toISOString()),
     ]);
 
     const todaySales = salesRes.data || [];
-    const revenueAdvances = todaySales.filter((t: any) => t.category === 'adiantamento').reduce((s: number, t: any) => s + t.total_amount, 0);
+    // Pending advances from appointments (not completed yet)
+    const pendingAdv = (pendingAdvRes.data || []) as any[];
+    const revenueAdvances = pendingAdv.reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
     const revenueTurnos = todaySales.filter((t: any) => t.category !== 'adiantamento').reduce((s: number, t: any) => s + t.total_amount, 0);
     const revenueToday = revenueTurnos; // Adiantamentos are held funds, not revenue
     const totalClients = clientsRes.count || 0;

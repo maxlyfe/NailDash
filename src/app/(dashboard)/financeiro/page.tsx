@@ -53,6 +53,7 @@ export default function FinanceiroPage() {
   const [closing, setClosing] = useState<MonthlyClosing | null>(null);
   const [prevClosing, setPrevClosing] = useState<MonthlyClosing | null>(null);
   const [nextMonthAdvances, setNextMonthAdvances] = useState<TxRow[]>([]);
+  const [pendingAdvanceTotal, setPendingAdvanceTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<TxModalMode>('closed');
   const [saving, setSaving] = useState(false);
@@ -114,7 +115,7 @@ export default function FinanceiroPage() {
     setLoading(true);
     try {
       // Load transactions WITHOUT joins first (fast) — names loaded on demand
-      const [txRes, closingRes, prevClosingRes, nextAdvRes] = await Promise.all([
+      const [txRes, closingRes, prevClosingRes, nextAdvRes, pendingAdvRes] = await Promise.all([
         supabase
           .from('transactions')
           .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total, client_id, professional_id')
@@ -143,11 +144,23 @@ export default function FinanceiroPage() {
           .lte('transaction_date', `${nextMonthRange.end}T23:59:59`)
           .gte('registered_at', `${monthStart}T00:00:00`)
           .lte('registered_at', `${monthEndDate}T23:59:59`),
+        // Appointments with advances that are NOT completed (pending advances)
+        supabase
+          .from('appointments')
+          .select('advance_amount, status')
+          .eq('salon_id', salon.id)
+          .gt('advance_amount', 0)
+          .neq('status', 'completed')
+          .neq('status', 'cancelled')
+          .gte('starts_at', `${monthStart}T00:00:00`)
+          .lte('starts_at', `${monthEndDate}T23:59:59`),
       ]);
       setTransactions((txRes.data || []) as TxRow[]);
       setClosing(closingRes.data as MonthlyClosing | null);
       setPrevClosing(prevClosingRes.data as MonthlyClosing | null);
       setNextMonthAdvances((nextAdvRes.data || []) as TxRow[]);
+      const pendingAdv = (pendingAdvRes.data || []) as any[];
+      setPendingAdvanceTotal(pendingAdv.reduce((s: number, a: any) => s + (a.advance_amount || 0), 0));
     } catch (e) {
       console.error(e);
     }
@@ -201,8 +214,8 @@ export default function FinanceiroPage() {
   const expenseCard = expenses.reduce((s, t) => s + t.payment_card, 0);
   const expenseTransfer = expenses.reduce((s, t) => s + t.payment_transfer, 0);
 
-  // Adiantamentos do mês
-  const totalAdvances = advanceSales.reduce((s, t) => s + t.total_amount, 0);
+  // Adiantamentos pendentes (apenas de turnos ainda não fechados)
+  // pendingAdvanceTotal is computed from appointments, not transactions
 
   // Next month advances (money physically in bank but belongs to future)
   const totalNextAdvances = nextMonthAdvances.reduce((s, t) => s + t.total_amount, 0);
@@ -398,7 +411,7 @@ export default function FinanceiroPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <StatCard label={t.billing} value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
                 <StatCard label={t.expenses} value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
-                <StatCard label={t.advances || 'Adiantamentos'} value={fmt(totalAdvances)} color="text-nd-accent" icon={ArrowRightLeft} iconBg="bg-nd-accent/10" />
+                <StatCard label={t.advances || 'Adiantamentos'} value={fmt(pendingAdvanceTotal)} color="text-nd-accent" icon={ArrowRightLeft} iconBg="bg-nd-accent/10" />
                 <StatCard label={t.balance} value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
               </div>
 
