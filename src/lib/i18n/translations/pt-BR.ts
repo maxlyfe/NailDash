@@ -181,6 +181,7 @@ const ptBR = {
   closing: 'Fechamento',
   billing: 'Faturamento',
   salaries: 'Salários',
+  advances: 'Adiantamentos',
   balance: 'Saldo',
   revenueByMethod: 'Faturamento por forma',
   expenseByMethod: 'Despesas por forma',

@@ -183,6 +183,7 @@ const esAR: Translations = {
   closing: 'Cierre',
   billing: 'Facturación',
   salaries: 'Sueldos',
+  advances: 'Adelantos',
   balance: 'Saldo',
   revenueByMethod: 'Facturación por forma',
   expenseByMethod: 'Gastos por forma',

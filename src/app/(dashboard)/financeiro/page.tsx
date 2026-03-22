@@ -184,13 +184,16 @@ export default function FinanceiroPage() {
 
   // Computed
   const sales = transactions.filter(t => t.type === 'sale');
+  const turnoSales = sales.filter(t => t.category !== 'adiantamento');
+  const advanceSales = sales.filter(t => t.category === 'adiantamento');
   const expenses = transactions.filter(t => t.type === 'expense');
 
-  const totalRevenue = sales.reduce((s, t) => s + t.total_amount, 0);
-  const revenuePix = sales.reduce((s, t) => s + t.payment_pix, 0);
-  const revenueCash = sales.reduce((s, t) => s + t.payment_cash, 0);
-  const revenueCard = sales.reduce((s, t) => s + t.payment_card, 0);
-  const revenueTransfer = sales.reduce((s, t) => s + t.payment_transfer, 0);
+  // Faturamento = only turnos (adiantamentos are held funds, not revenue)
+  const totalRevenue = turnoSales.reduce((s, t) => s + t.total_amount, 0);
+  const revenuePix = turnoSales.reduce((s, t) => s + t.payment_pix, 0);
+  const revenueCash = turnoSales.reduce((s, t) => s + t.payment_cash, 0);
+  const revenueCard = turnoSales.reduce((s, t) => s + t.payment_card, 0);
+  const revenueTransfer = turnoSales.reduce((s, t) => s + t.payment_transfer, 0);
 
   const totalExpenses = expenses.reduce((s, t) => s + t.total_amount, 0);
   const expensePix = expenses.reduce((s, t) => s + t.payment_pix, 0);
@@ -198,11 +201,8 @@ export default function FinanceiroPage() {
   const expenseCard = expenses.reduce((s, t) => s + t.payment_card, 0);
   const expenseTransfer = expenses.reduce((s, t) => s + t.payment_transfer, 0);
 
-  // Salaries are expenses with category containing 'salario' or 'salário' or type 'salary'
-  const salaryExpenses = expenses.filter(t =>
-    t.type === 'salary' || (t.category && /sal[aá]ri/i.test(t.category))
-  );
-  const totalSalaries = salaryExpenses.reduce((s, t) => s + t.total_amount, 0);
+  // Adiantamentos do mês
+  const totalAdvances = advanceSales.reduce((s, t) => s + t.total_amount, 0);
 
   // Next month advances (money physically in bank but belongs to future)
   const totalNextAdvances = nextMonthAdvances.reduce((s, t) => s + t.total_amount, 0);
@@ -221,7 +221,8 @@ export default function FinanceiroPage() {
   })();
 
   const startingBalance = closing?.starting_balance ?? prevMonthBalance;
-  const fundoCaixa = startingBalance + totalRevenue - totalExpenses;
+  // Saldo = faturamento + fundo de caixa (starting balance) - despesas
+  const fundoCaixa = totalRevenue + startingBalance - totalExpenses;
 
   const fmt = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: t.currency });
 
@@ -397,7 +398,7 @@ export default function FinanceiroPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <StatCard label={t.billing} value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
                 <StatCard label={t.expenses} value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
-                <StatCard label={t.salaries} value={fmt(totalSalaries)} color="text-nd-warning" icon={UserCheck} iconBg="bg-nd-warning/10" />
+                <StatCard label={t.advances || 'Adiantamentos'} value={fmt(totalAdvances)} color="text-nd-accent" icon={ArrowRightLeft} iconBg="bg-nd-accent/10" />
                 <StatCard label={t.balance} value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
               </div>
 
