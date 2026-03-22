@@ -105,11 +105,12 @@ export default function DashboardPage() {
     ]);
 
     const todaySales = salesRes.data || [];
-    const revenueToday = todaySales.reduce((s: number, t: any) => s + t.total_amount, 0);
-    const revenueTurnos = todaySales.filter((t: any) => t.category === 'turno').reduce((s: number, t: any) => s + t.total_amount, 0);
     const revenueAdvances = todaySales.filter((t: any) => t.category === 'adiantamento').reduce((s: number, t: any) => s + t.total_amount, 0);
+    const revenueTurnos = todaySales.filter((t: any) => t.category !== 'adiantamento').reduce((s: number, t: any) => s + t.total_amount, 0);
+    const revenueToday = revenueTurnos; // Adiantamentos are held funds, not revenue
     const totalClients = clientsRes.count || 0;
-    const avgTicket = todaySales.length > 0 ? revenueToday / todaySales.length : 0;
+    const turnoSales = todaySales.filter((t: any) => t.category !== 'adiantamento');
+    const avgTicket = turnoSales.length > 0 ? revenueTurnos / turnoSales.length : 0;
 
     const todayAppts = apptsRes.data || [];
     const appointmentsToday = todayAppts.length;
