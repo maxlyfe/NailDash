@@ -151,6 +151,7 @@ export default function DashboardPage() {
       const wEnd = new Date(d);
       wEnd.setDate(wEnd.getDate() + 6);
       if (wEnd > monthEnd) wEnd.setTime(monthEnd.getTime());
+      wEnd.setHours(23, 59, 59, 999);
       const label = `${wStart.getDate()}-${wEnd.getDate()}`;
       const weekAppts = monthAppts.filter((a: any) => {
         const ad = new Date(a.starts_at);
