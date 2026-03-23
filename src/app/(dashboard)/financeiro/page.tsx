@@ -197,7 +197,7 @@ export default function FinanceiroPage() {
 
   // Computed
   const sales = transactions.filter(t => t.type === 'sale');
-  const turnoSales = sales.filter(t => t.category !== 'adiantamento');
+  const turnoSales = sales.filter(t => t.category === 'turno');
   const advanceSales = sales.filter(t => t.category === 'adiantamento');
   const expenses = transactions.filter(t => t.type === 'expense');
 
@@ -326,7 +326,7 @@ export default function FinanceiroPage() {
 
     const prevTxs = prevTxRes.data || [];
     const prevStartBal = prevClRes.data?.starting_balance || 0;
-    const prevRevenue = prevTxs.filter((t: any) => t.type === 'sale').reduce((s: number, t: any) => s + t.total_amount, 0);
+    const prevRevenue = prevTxs.filter((t: any) => t.type === 'sale' && t.category === 'turno').reduce((s: number, t: any) => s + t.total_amount, 0);
     const prevExpense = prevTxs.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + t.total_amount, 0);
     const calculatedBalance = prevStartBal + prevRevenue - prevExpense;
 
