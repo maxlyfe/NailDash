@@ -176,6 +176,7 @@ export default function AgendaPage() {
     discount: '0',
     extras: '0',
     extras_description: '',
+    service_ids: [] as string[],
   });
 
   // Client search
@@ -459,20 +460,24 @@ export default function AgendaPage() {
     // Always use fresh data from appointments array
     const fresh = appointments.find(a => a.id === appt.id) || appt;
 
-    // If total_amount is 0, recalculate from appointment_services
-    let resolvedAppt = fresh;
-    if (!fresh.total_amount && salon?.id) {
+    // Load appointment services
+    let svcIds: string[] = [];
+    if (salon?.id) {
       const { data: apptSvcs } = await supabase
         .from('appointment_services')
-        .select('price')
+        .select('service_id')
         .eq('appointment_id', fresh.id);
-      if (apptSvcs && apptSvcs.length > 0) {
-        const total = apptSvcs.reduce((sum: number, s: any) => sum + (s.price || 0), 0);
-        resolvedAppt = { ...fresh, total_amount: total };
-        // Also update the appointment in the DB so it's correct going forward
-        await supabase.from('appointments').update({ total_amount: total }).eq('id', fresh.id);
+      if (apptSvcs) {
+        svcIds = apptSvcs.map((s: any) => s.service_id);
       }
     }
+
+    // Recalculate total from services
+    const total = svcIds.reduce((sum, id) => {
+      const svc = services.find(s => s.id === id);
+      return sum + (svc?.price || 0);
+    }, 0);
+    const resolvedAppt = { ...fresh, total_amount: total || fresh.total_amount };
 
     setSelected(resolvedAppt);
     setCloseForm({
@@ -480,6 +485,7 @@ export default function AgendaPage() {
       discount: String(resolvedAppt.discount || 0),
       extras: String(resolvedAppt.extras || 0),
       extras_description: resolvedAppt.extras_description || '',
+      service_ids: svcIds,
     });
     setModal('close_shift');
   };
@@ -648,9 +654,24 @@ export default function AgendaPage() {
     const discount = parseFloat(closeForm.discount) || 0;
     const extras = parseFloat(closeForm.extras) || 0;
     const advanceAlreadyPaid = selected.advance_amount || 0;
-    const baseTotal = selected.total_amount || 0;
+    const baseTotal = closeServicesTotal;
     const finalTotal = baseTotal - discount + extras;
     const remaining = finalTotal - advanceAlreadyPaid;
+
+    // Update appointment_services with current selection
+    await supabase.from('appointment_services').delete().eq('appointment_id', selected.id);
+    if (closeForm.service_ids.length > 0) {
+      const svcRows = closeForm.service_ids.map(sid => {
+        const svc = services.find(s => s.id === sid)!;
+        return {
+          appointment_id: selected.id,
+          service_id: sid,
+          price: svc?.price || 0,
+          duration_minutes: svc?.duration_minutes || 0,
+        };
+      });
+      await supabase.from('appointment_services').insert(svcRows);
+    }
 
     const { error: err } = await supabase.from('appointments').update({
       status: 'completed',
@@ -764,6 +785,39 @@ export default function AgendaPage() {
     form.service_ids.forEach(id => { map[id] = (map[id] || 0) + 1; });
     return map;
   }, [form.service_ids]);
+
+  // Close shift service quantities and total
+  const closeServiceQuantities = useMemo(() => {
+    const map: Record<string, number> = {};
+    closeForm.service_ids.forEach(id => { map[id] = (map[id] || 0) + 1; });
+    return map;
+  }, [closeForm.service_ids]);
+
+  const closeServicesTotal = closeForm.service_ids.reduce((sum, id) => {
+    const svc = services.find(s => s.id === id);
+    return sum + (svc?.price || 0);
+  }, 0);
+
+  const toggleCloseService = (id: string) => {
+    setCloseForm(f => {
+      const newIds = f.service_ids.includes(id)
+        ? f.service_ids.filter(s => s !== id)
+        : [...f.service_ids, id];
+      return { ...f, service_ids: newIds };
+    });
+  };
+  const incrementCloseService = (id: string) => {
+    setCloseForm(f => ({ ...f, service_ids: [...f.service_ids, id] }));
+  };
+  const decrementCloseService = (id: string) => {
+    setCloseForm(f => {
+      const idx = f.service_ids.indexOf(id);
+      if (idx === -1) return f;
+      const newIds = [...f.service_ids];
+      newIds.splice(idx, 1);
+      return { ...f, service_ids: newIds };
+    });
+  };
 
   // Auto-fill advance with 50% when services change (create mode only)
   useEffect(() => {
@@ -1610,14 +1664,40 @@ export default function AgendaPage() {
             </div>
 
             <div className="p-6 space-y-4">
-              {/* Service total + advance info */}
-              <div className="p-4 rounded-xl bg-nd-surface/50 border border-nd-border/30 space-y-2">
-                <div className="flex items-center justify-between">
+              {/* Services with quantity controls */}
+              <div>
+                <label className="section-label mb-1.5 block">{t.services}</label>
+                <div className="space-y-0.5 max-h-40 overflow-y-auto rounded-xl bg-nd-surface/30 border border-nd-border/20 p-1">
+                  {services.map(svc => {
+                    const qty = closeServiceQuantities[svc.id] || 0;
+                    return (
+                      <label key={svc.id} className="flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-white/60 cursor-pointer transition-colors">
+                        <input type="checkbox" checked={qty > 0}
+                          onChange={() => toggleCloseService(svc.id)}
+                          className="w-3.5 h-3.5 rounded border-nd-border text-nd-accent focus:ring-nd-accent/20" />
+                        <span className="text-sm text-nd-text flex-1 truncate">{svc.name}</span>
+                        {qty > 0 && (
+                          <div className="flex items-center gap-1 shrink-0" onClick={e => e.preventDefault()}>
+                            <button type="button" onClick={(e) => { e.preventDefault(); decrementCloseService(svc.id); }}
+                              className="w-5 h-5 rounded bg-nd-border/30 hover:bg-nd-border/50 flex items-center justify-center text-xs font-bold text-nd-text">−</button>
+                            <span className="text-xs font-semibold text-nd-heading w-5 text-center">{qty}</span>
+                            <button type="button" onClick={(e) => { e.preventDefault(); incrementCloseService(svc.id); }}
+                              className="w-5 h-5 rounded bg-nd-accent/20 hover:bg-nd-accent/30 flex items-center justify-center text-xs font-bold text-nd-accent">+</button>
+                          </div>
+                        )}
+                        <span className="text-[11px] text-nd-muted shrink-0">
+                          {formatCurrency(svc.price * (qty || 1))} · {svc.duration_minutes * (qty || 1)}min
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center justify-between mt-2">
                   <span className="text-sm text-nd-muted">{t.total} {t.services.toLowerCase()}</span>
-                  <span className="text-lg font-bold text-nd-heading">{formatCurrency(selected.total_amount || 0)}</span>
+                  <span className="text-lg font-bold text-nd-heading">{formatCurrency(closeServicesTotal)}</span>
                 </div>
                 {selected.advance_amount > 0 && (
-                  <div className="flex items-center justify-between pt-1 border-t border-nd-border/20">
+                  <div className="flex items-center justify-between pt-1 border-t border-nd-border/20 mt-1">
                     <span className="text-xs text-nd-accent flex items-center gap-1">
                       {t.deposit} ({PAYMENT_METHODS.find(p => p.value === selected.advance_payment_method)?.label || 'N/A'})
                     </span>
@@ -1681,7 +1761,7 @@ export default function AgendaPage() {
 
               {/* Summary */}
               {(() => {
-                const baseTotal = selected.total_amount || 0;
+                const baseTotal = closeServicesTotal;
                 const discount = parseFloat(closeForm.discount) || 0;
                 const extras = parseFloat(closeForm.extras) || 0;
                 const advancePaid = selected.advance_amount || 0;
