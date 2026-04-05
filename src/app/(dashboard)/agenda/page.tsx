@@ -720,12 +720,29 @@ export default function AgendaPage() {
     setShowClientDropdown(true);
   };
 
-  // Service toggle
+  // Service toggle / quantity
   const toggleService = (id: string) => {
     setForm(f => {
       const newIds = f.service_ids.includes(id)
         ? f.service_ids.filter(s => s !== id)
         : [...f.service_ids, id];
+      const newEnd = calcEndTime(f.starts_at, newIds);
+      return { ...f, service_ids: newIds, ends_at: newEnd || f.ends_at };
+    });
+  };
+  const incrementService = (id: string) => {
+    setForm(f => {
+      const newIds = [...f.service_ids, id];
+      const newEnd = calcEndTime(f.starts_at, newIds);
+      return { ...f, service_ids: newIds, ends_at: newEnd || f.ends_at };
+    });
+  };
+  const decrementService = (id: string) => {
+    setForm(f => {
+      const idx = f.service_ids.indexOf(id);
+      if (idx === -1) return f;
+      const newIds = [...f.service_ids];
+      newIds.splice(idx, 1);
       const newEnd = calcEndTime(f.starts_at, newIds);
       return { ...f, service_ids: newIds, ends_at: newEnd || f.ends_at };
     });
@@ -741,6 +758,12 @@ export default function AgendaPage() {
     const svc = services.find(s => s.id === id);
     return sum + (svc?.price || 0);
   }, 0);
+
+  const serviceQuantities = useMemo(() => {
+    const map: Record<string, number> = {};
+    form.service_ids.forEach(id => { map[id] = (map[id] || 0) + 1; });
+    return map;
+  }, [form.service_ids]);
 
   // Auto-fill advance with 50% when services change (create mode only)
   useEffect(() => {
@@ -1340,17 +1363,29 @@ export default function AgendaPage() {
                         />
                       </div>
                       <div className="space-y-0.5 max-h-32 overflow-y-auto rounded-xl bg-nd-surface/30 border border-nd-border/20 p-1">
-                        {filteredServices.map(svc => (
+                        {filteredServices.map(svc => {
+                          const qty = serviceQuantities[svc.id] || 0;
+                          return (
                           <label key={svc.id} className="flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-white/60 cursor-pointer transition-colors">
-                            <input type="checkbox" checked={form.service_ids.includes(svc.id)}
+                            <input type="checkbox" checked={qty > 0}
                               onChange={() => toggleService(svc.id)}
                               className="w-3.5 h-3.5 rounded border-nd-border text-nd-accent focus:ring-nd-accent/20" />
                             <span className="text-sm text-nd-text flex-1 truncate">{svc.name}</span>
+                            {qty > 0 && (
+                              <div className="flex items-center gap-1 shrink-0" onClick={e => e.preventDefault()}>
+                                <button type="button" onClick={(e) => { e.preventDefault(); decrementService(svc.id); }}
+                                  className="w-5 h-5 rounded bg-nd-border/30 hover:bg-nd-border/50 flex items-center justify-center text-xs font-bold text-nd-text">−</button>
+                                <span className="text-xs font-semibold text-nd-heading w-5 text-center">{qty}</span>
+                                <button type="button" onClick={(e) => { e.preventDefault(); incrementService(svc.id); }}
+                                  className="w-5 h-5 rounded bg-nd-accent/20 hover:bg-nd-accent/30 flex items-center justify-center text-xs font-bold text-nd-accent">+</button>
+                              </div>
+                            )}
                             <span className="text-[11px] text-nd-muted shrink-0">
-                              {formatCurrency(svc.price)} · {svc.duration_minutes}min
+                              {formatCurrency(svc.price * (qty || 1))} · {svc.duration_minutes * (qty || 1)}min
                             </span>
                           </label>
-                        ))}
+                          );
+                        })}
                         {filteredServices.length === 0 && (
                           <p className="text-xs text-nd-muted text-center py-2">{t.noServicesFound}</p>
                         )}
