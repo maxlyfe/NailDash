@@ -1407,253 +1407,149 @@ export default function AgendaPage() {
         const isClosedEdit = modal === 'edit' && selected?.status === 'completed';
 
         /* ──────────────────────────────────────────────────────
-           PREMIUM MODAL — Editar Turno Fechado
+           DETALHE — Turno Fechado (recibo, não formulário)
         ────────────────────────────────────────────────────── */
         if (isClosedEdit && selected) {
           const closedDateLabel = selected.closed_at
             ? new Date(selected.closed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
             : null;
+          const clientDisplayName = selected.client_id
+            ? (clientMap[selected.client_id] || selected.client_name || t.client)
+            : (selected.client_name || t.client);
+          const profName = profMap[selected.professional_id] || '';
+          const pmLabel = PAYMENT_METHODS.find(p => p.value === selected.payment_method)?.label || '';
+          const advPmLabel = PAYMENT_METHODS.find(p => p.value === selected.advance_payment_method)?.label || '';
+          const remaining = (selected.total_amount || 0) - (selected.advance_amount || 0);
+          // Services with their individual data
+          const closedServices = form.service_ids.reduce<{ id: string; name: string; price: number; qty: number }[]>((acc, sid) => {
+            const svc = services.find(s => s.id === sid);
+            if (!svc) return acc;
+            const existing = acc.find(a => a.id === sid);
+            if (existing) { existing.qty++; }
+            else { acc.push({ id: sid, name: svc.name, price: svc.price, qty: 1 }); }
+            return acc;
+          }, []);
 
           return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setModal('closed')} />
-            <div className="relative bg-nd-card rounded-2xl border border-nd-success/20 shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="relative bg-nd-card rounded-2xl border border-nd-success/20 shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
 
-              {/* ── Faixa de status no topo ── */}
-              <div className="bg-nd-success px-6 py-3 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
-                    <Check className="w-4 h-4 text-white" />
+              {/* ── Header verde ── */}
+              <div className="bg-nd-success px-5 py-4 flex items-start justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                    <Check className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <p className="text-white font-bold text-sm leading-tight">Turno Fechado</p>
-                    {closedDateLabel && (
-                      <p className="text-white/70 text-[10px] leading-tight">Fechado em {closedDateLabel}</p>
-                    )}
+                    <p className="text-white font-bold text-base leading-tight">{clientDisplayName}</p>
+                    <p className="text-white/75 text-[11px] leading-tight capitalize mt-0.5">{formDateLabel}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <p className="text-white/80 text-xs capitalize hidden sm:block">{formDateLabel}</p>
-                  <button onClick={() => setModal('closed')}
-                    className="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors">
-                    <X className="w-4 h-4 text-white" />
-                  </button>
-                </div>
+                <button onClick={() => setModal('closed')}
+                  className="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors shrink-0">
+                  <X className="w-4 h-4 text-white" />
+                </button>
               </div>
 
-              <div className="overflow-y-auto flex-1">
-                <div className="flex flex-col md:flex-row">
+              {/* ── Corpo: recibo ── */}
+              <div className="overflow-y-auto flex-1 p-5 space-y-4">
 
-                  {/* ── Painel esquerdo: Cliente ── */}
-                  <div ref={clientRef} className="md:w-60 shrink-0 border-b md:border-b-0 md:border-r border-nd-border/20 flex flex-col">
-                    <div className="p-4 border-b border-nd-border/10">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.client}</p>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-nd-muted" />
-                        <input
-                          type="text"
-                          value={clientSearch}
-                          onChange={e => handleClientSearchChange(e.target.value)}
-                          onFocus={() => setShowClientDropdown(true)}
-                          placeholder={t.search}
-                          className="input-field !pl-8 !py-2 text-sm !bg-nd-surface/50"
-                        />
-                      </div>
-                      {form.client_id && (
-                        <p className="text-[10px] text-nd-success mt-1.5 flex items-center gap-1">
-                          <Check className="w-3 h-3" /> Cliente cadastrado
-                        </p>
-                      )}
-                      {!form.client_id && clientSearch.trim() && (
-                        <p className="text-[10px] text-nd-accent mt-1.5">Avulso: &quot;{clientSearch.trim()}&quot;</p>
-                      )}
-                    </div>
-                    <div className="flex-1 overflow-y-auto max-h-64 md:max-h-none">
-                      {filteredClients.length === 0 ? (
-                        <p className="px-4 py-4 text-xs text-nd-muted text-center">
-                          {clientSearch.trim() ? t.noneFound : t.noClientsRegistered}
-                        </p>
-                      ) : (
-                        filteredClients.map(c => (
-                          <button
-                            key={c.id}
-                            onClick={() => selectClient(c)}
-                            className={`w-full text-left px-4 py-3 text-sm hover:bg-nd-surface/60 transition-colors flex items-center gap-3 border-b border-nd-border/8 last:border-0 ${
-                              form.client_id === c.id ? 'bg-nd-success/5' : ''
-                            }`}
-                          >
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold ${
-                              form.client_id === c.id ? 'bg-nd-success/20 text-nd-success' : 'bg-nd-accent/10 text-nd-accent'
-                            }`}>
-                              {c.name[0]}
-                            </div>
-                            <span className="truncate flex-1 text-nd-text">{c.name}</span>
-                            {form.client_id === c.id && (
-                              <div className="w-4 h-4 rounded-full bg-nd-success flex items-center justify-center shrink-0">
-                                <Check className="w-2.5 h-2.5 text-white" />
-                              </div>
-                            )}
-                          </button>
-                        ))
-                      )}
-                    </div>
+                {/* Info geral */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-nd-surface rounded-xl p-3 text-center">
+                    <p className="text-[9px] uppercase tracking-wider text-nd-muted font-semibold mb-1">Início</p>
+                    <p className="text-sm font-bold text-nd-heading">{formatTime(selected.starts_at)}</p>
                   </div>
-
-                  {/* ── Painel direito: Formulário ── */}
-                  <div className="flex-1 overflow-y-auto">
-
-                    {/* Seção: Horário */}
-                    <div className="p-5 border-b border-nd-border/10">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-3">Horário e Profissional</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] text-nd-muted mb-1.5 block">{t.startTime}</label>
-                          <input type="datetime-local" value={form.starts_at}
-                            onChange={e => {
-                              const newStart = e.target.value;
-                              setForm(f => ({ ...f, starts_at: newStart, ends_at: calcEndTime(newStart, f.service_ids) || f.ends_at }));
-                            }}
-                            className="input-field !bg-nd-surface/30 text-sm" />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-nd-muted mb-1.5 block">{t.professional}</label>
-                          <select value={form.professional_id}
-                            onChange={e => setForm(f => ({ ...f, professional_id: e.target.value }))}
-                            className="input-field !bg-nd-surface/30 text-sm">
-                            <option value="">Selecione...</option>
-                            {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Seção: Serviços */}
-                    {services.length > 0 && (
-                      <div className="p-5 border-b border-nd-border/10">
-                        <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-3">{t.services}</p>
-                        <div className="relative mb-2.5">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-nd-muted" />
-                          <input
-                            type="text"
-                            value={serviceSearch}
-                            onChange={e => setServiceSearch(e.target.value)}
-                            placeholder={t.search}
-                            className="input-field !pl-8 !py-2 text-sm !bg-nd-surface/30"
-                          />
-                        </div>
-                        <div className="rounded-xl border border-nd-border/20 overflow-hidden">
-                          {filteredServices.map((svc, idx) => {
-                            const qty = serviceQuantities[svc.id] || 0;
-                            const isChecked = qty > 0;
-                            return (
-                              <label
-                                key={svc.id}
-                                className={`flex items-center gap-3 px-3 py-3 cursor-pointer transition-colors border-b border-nd-border/8 last:border-0 ${
-                                  isChecked ? 'bg-nd-success/[0.04]' : idx % 2 === 0 ? 'bg-white' : 'bg-nd-surface/20'
-                                } hover:bg-nd-success/[0.06]`}
-                              >
-                                <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border-2 transition-colors ${
-                                  isChecked ? 'bg-nd-success border-nd-success' : 'border-nd-border/50 bg-white'
-                                }`} onClick={() => toggleService(svc.id)}>
-                                  {isChecked && <Check className="w-3 h-3 text-white" />}
-                                </div>
-                                <input type="checkbox" checked={isChecked} onChange={() => toggleService(svc.id)} className="sr-only" />
-                                <span className={`text-sm flex-1 truncate ${isChecked ? 'font-medium text-nd-heading' : 'text-nd-text'}`}>
-                                  {svc.name}
-                                </span>
-                                {isChecked && (
-                                  <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.preventDefault()}>
-                                    <button type="button"
-                                      onClick={(e) => { e.preventDefault(); decrementService(svc.id); }}
-                                      className="w-7 h-7 rounded-lg bg-nd-surface hover:bg-nd-border/30 border border-nd-border/30 flex items-center justify-center text-sm font-bold text-nd-muted transition-colors">
-                                      −
-                                    </button>
-                                    <span className="text-sm font-bold text-nd-heading w-6 text-center tabular-nums">{qty}</span>
-                                    <button type="button"
-                                      onClick={(e) => { e.preventDefault(); incrementService(svc.id); }}
-                                      className="w-7 h-7 rounded-lg bg-nd-success/15 hover:bg-nd-success/25 border border-nd-success/30 flex items-center justify-center text-sm font-bold text-nd-success transition-colors">
-                                      +
-                                    </button>
-                                  </div>
-                                )}
-                                <span className="text-[11px] text-nd-muted shrink-0 min-w-[80px] text-right">
-                                  {formatCurrency(svc.price * (qty || 1))} · {svc.duration_minutes * (qty || 1)}min
-                                </span>
-                              </label>
-                            );
-                          })}
-                          {filteredServices.length === 0 && (
-                            <p className="text-xs text-nd-muted text-center py-4">{t.noServicesFound}</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Seção: Resumo */}
-                    <div className="p-5 border-b border-nd-border/10">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-3">Resumo</p>
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <div>
-                          <label className="text-[11px] text-nd-muted mb-1.5 block">{t.endTime}</label>
-                          <input type="datetime-local" value={form.ends_at}
-                            onChange={e => setForm(f => ({ ...f, ends_at: e.target.value }))}
-                            className="input-field !bg-nd-surface/30 text-sm" />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-nd-muted mb-1.5 block">{t.duration}</label>
-                          <div className="flex items-center gap-2 h-[42px] px-3 rounded-xl bg-nd-surface/30 border border-nd-border/20 text-sm text-nd-muted">
-                            <Clock className="w-4 h-4" />
-                            <span>{totalDuration} min</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between py-3.5 px-4 rounded-xl bg-nd-success/8 border border-nd-success/20">
-                        <span className="text-sm font-medium text-nd-heading">{t.total}</span>
-                        <span className="text-xl font-bold text-nd-success">{formatCurrency(selectedServicesTotal)}</span>
-                      </div>
-                    </div>
-
-                    {/* Seção: Sinal */}
-                    <div className="p-5 border-b border-nd-border/10">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-3">{t.deposit}</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] text-nd-muted mb-1.5 block">{t.paidAmount} ({t.currencySymbol})</label>
-                          <input type="number" value={form.advance_amount}
-                            onChange={e => setForm(f => ({ ...f, advance_amount: e.target.value }))}
-                            min="0" step="0.01"
-                            placeholder="0,00"
-                            className="input-field !bg-nd-surface/30 text-sm font-semibold" />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-nd-muted mb-1.5 block">{t.paymentMethod}</label>
-                          <select value={form.advance_payment_method}
-                            onChange={e => setForm(f => ({ ...f, advance_payment_method: e.target.value }))}
-                            className="input-field !bg-nd-surface/30 text-sm"
-                            disabled={!hasAdvance}>
-                            {PAYMENT_METHODS.map(pm => (
-                              <option key={pm.value} value={pm.value}>{pm.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Seção: Observações */}
-                    <div className="p-5">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-3">{t.notes}</p>
-                      <input type="text" value={form.notes}
-                        onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                        placeholder={t.notes + '...'}
-                        className="input-field !bg-nd-surface/30 text-sm w-full" />
-                    </div>
-
+                  <div className="bg-nd-surface rounded-xl p-3 text-center">
+                    <p className="text-[9px] uppercase tracking-wider text-nd-muted font-semibold mb-1">Fim</p>
+                    <p className="text-sm font-bold text-nd-heading">{formatTime(selected.ends_at)}</p>
+                  </div>
+                  <div className="bg-nd-surface rounded-xl p-3 text-center">
+                    <p className="text-[9px] uppercase tracking-wider text-nd-muted font-semibold mb-1">Duração</p>
+                    <p className="text-sm font-bold text-nd-heading">{totalDuration}min</p>
                   </div>
                 </div>
+
+                {/* Profissional — editável */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.professional}</p>
+                  <select value={form.professional_id}
+                    onChange={e => setForm(f => ({ ...f, professional_id: e.target.value }))}
+                    className="input-field !bg-nd-surface/50 text-sm w-full">
+                    {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+
+                {/* Serviços realizados */}
+                {closedServices.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.services}</p>
+                    <div className="rounded-xl border border-nd-border/20 overflow-hidden">
+                      {closedServices.map((svc, i) => (
+                        <div key={svc.id + i} className="flex items-center justify-between px-3.5 py-2.5 border-b border-nd-border/8 last:border-0 bg-white">
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-nd-success/60 shrink-0" />
+                            <span className="text-sm text-nd-heading">{svc.name}</span>
+                            {svc.qty > 1 && (
+                              <span className="text-[10px] font-bold text-nd-accent bg-nd-accent/10 px-1.5 py-0.5 rounded-full">×{svc.qty}</span>
+                            )}
+                          </div>
+                          <span className="text-sm font-semibold text-nd-heading tabular-nums">{formatCurrency(svc.price * svc.qty)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Resumo financeiro */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">Financeiro</p>
+                  <div className="rounded-xl border border-nd-border/20 overflow-hidden">
+                    {selected.discount > 0 && (
+                      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-nd-border/8 bg-white">
+                        <span className="text-sm text-nd-muted">Desconto</span>
+                        <span className="text-sm font-medium text-nd-danger tabular-nums">-{formatCurrency(selected.discount)}</span>
+                      </div>
+                    )}
+                    {selected.extras > 0 && (
+                      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-nd-border/8 bg-white">
+                        <span className="text-sm text-nd-muted">{selected.extras_description || 'Acréscimos'}</span>
+                        <span className="text-sm font-medium text-nd-success tabular-nums">+{formatCurrency(selected.extras)}</span>
+                      </div>
+                    )}
+                    {selected.advance_amount > 0 && (
+                      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-nd-border/8 bg-white">
+                        <span className="text-sm text-nd-muted">Sinal ({advPmLabel})</span>
+                        <span className="text-sm font-medium text-nd-accent tabular-nums">-{formatCurrency(selected.advance_amount)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between px-3.5 py-3 bg-nd-success/5">
+                      <div>
+                        <span className="text-sm font-bold text-nd-heading">{t.total}</span>
+                        {pmLabel && <span className="text-[10px] text-nd-muted ml-1.5">· {pmLabel}</span>}
+                      </div>
+                      <span className="text-lg font-bold text-nd-success tabular-nums">{formatCurrency(selected.total_amount || 0)}</span>
+                    </div>
+                  </div>
+                  {closedDateLabel && (
+                    <p className="text-[10px] text-nd-muted mt-1.5 text-right">Fechado em {closedDateLabel}</p>
+                  )}
+                </div>
+
+                {/* Observações — editável */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.notes}</p>
+                  <input type="text" value={form.notes}
+                    onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder={t.notes + '...'}
+                    className="input-field !bg-nd-surface/50 text-sm w-full" />
+                </div>
+
               </div>
 
               {/* ── Footer ── */}
-              <div className="px-6 py-4 border-t border-nd-border/20 flex items-center gap-3 shrink-0 bg-nd-surface/30">
+              <div className="px-5 py-3.5 border-t border-nd-border/20 flex items-center gap-2.5 shrink-0 bg-nd-surface/30">
                 <button
                   onClick={() => handleDelete(selected.id)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-nd-danger hover:bg-nd-danger/10 transition-colors text-sm font-medium">
@@ -1664,10 +1560,10 @@ export default function AgendaPage() {
                 <button onClick={() => setModal('closed')} className="btn-ghost text-sm px-4 py-2">{t.cancel}</button>
                 <button
                   onClick={handleSave}
-                  disabled={saving || (!form.client_id && !form.client_name.trim()) || !form.professional_id}
+                  disabled={saving || !form.professional_id}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-nd-success text-white text-sm font-semibold hover:bg-nd-success/90 disabled:opacity-50 transition-colors shadow-sm">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Salvar Ajustes
+                  Salvar
                 </button>
               </div>
             </div>
