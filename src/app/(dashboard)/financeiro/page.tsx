@@ -440,10 +440,10 @@ export default function FinanceiroPage() {
                 <div className="card p-5">
                   <h3 className="section-label mb-3">{t.revenueByMethod}</h3>
                   <div className="space-y-2">
-                    {locale !== 'es-AR' && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(revenuePix)} />}
-                    <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)} />
-                    <PayRow icon={CreditCard} label={t.pay_card} value={fmt(revenueCard)} />
-                    <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(revenueTransfer)} />
+                    {locale !== 'es-AR' && revenuePix > 0 && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(revenuePix)} />}
+                    {(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash) > 0 && <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)} />}
+                    {revenueCard > 0 && <PayRow icon={CreditCard} label={t.pay_card} value={fmt(revenueCard)} />}
+                    {revenueTransfer > 0 && <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(revenueTransfer)} />}
                   </div>
                   <div className="divider mt-3 pt-3">
                     <div className="flex justify-between text-sm font-semibold">
@@ -460,10 +460,10 @@ export default function FinanceiroPage() {
                 <div className="card p-5">
                   <h3 className="section-label mb-3">{t.expenseByMethod}</h3>
                   <div className="space-y-2">
-                    {locale !== 'es-AR' && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(expensePix)} />}
-                    <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? expenseCash + expensePix : expenseCash)} />
-                    <PayRow icon={CreditCard} label={t.pay_card} value={fmt(expenseCard)} />
-                    <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(expenseTransfer)} />
+                    {locale !== 'es-AR' && expensePix > 0 && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(expensePix)} />}
+                    {(locale === 'es-AR' ? expenseCash + expensePix : expenseCash) > 0 && <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? expenseCash + expensePix : expenseCash)} />}
+                    {expenseCard > 0 && <PayRow icon={CreditCard} label={t.pay_card} value={fmt(expenseCard)} />}
+                    {expenseTransfer > 0 && <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(expenseTransfer)} />}
                   </div>
                 </div>
               </div>
