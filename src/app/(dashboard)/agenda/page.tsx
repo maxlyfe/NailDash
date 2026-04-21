@@ -1058,6 +1058,8 @@ export default function AgendaPage() {
                   const style = getApptStyle(appt);
                   const isCompleted = appt.status === 'completed';
                   const svcName = apptServiceNames[appt.id];
+                  const pmIcon = isCompleted ? PAYMENT_METHODS.find(p => p.value === appt.payment_method) : null;
+                  const PmIcon = pmIcon?.icon;
                   return (
                     <div
                       key={appt.id}
@@ -1072,14 +1074,34 @@ export default function AgendaPage() {
                         width: `calc((100% - 48px) / ${visibleColCount} - 4px)`,
                       }}
                     >
-                      <p className="text-[10px] font-bold text-nd-heading truncate leading-tight">
-                        {getApptDisplayName(appt)}
-                      </p>
-                      {svcName && <p className="text-[8px] text-nd-muted truncate">{svcName}</p>}
-                      <p className={`text-[8px] truncate ${appt.status === 'scheduled' ? 'text-nd-accent' : 'text-lime-600'}`}>
-                        {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
-                      </p>
-                      {isCompleted && <Check className="w-3 h-3 absolute top-1 right-1 text-nd-success/50" />}
+                      {isCompleted ? (
+                        <>
+                          <div className="flex items-start justify-between gap-0.5">
+                            <p className="text-[10px] font-bold text-nd-heading truncate leading-tight flex-1">
+                              {getApptDisplayName(appt)}
+                            </p>
+                            <Check className="w-3 h-3 shrink-0 text-nd-success/60 mt-0.5" />
+                          </div>
+                          {svcName && <p className="text-[8px] text-nd-muted truncate leading-tight">{svcName}</p>}
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <p className="text-[8px] text-nd-muted/70">{formatTime(appt.starts_at)}</p>
+                            {appt.total_amount > 0 && (
+                              <p className="text-[8px] font-bold text-nd-success ml-auto">{formatCurrency(appt.total_amount)}</p>
+                            )}
+                            {PmIcon && <PmIcon className="w-2.5 h-2.5 text-nd-muted/60 shrink-0" />}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[10px] font-bold text-nd-heading truncate leading-tight">
+                            {getApptDisplayName(appt)}
+                          </p>
+                          {svcName && <p className="text-[8px] text-nd-muted truncate">{svcName}</p>}
+                          <p className={`text-[8px] truncate ${appt.status === 'scheduled' ? 'text-nd-accent' : 'text-lime-600'}`}>
+                            {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
+                          </p>
+                        </>
+                      )}
                     </div>
                   );
                 });
@@ -1172,51 +1194,112 @@ export default function AgendaPage() {
                 const isCompleted = appt.status === 'completed';
                 const svcName = apptServiceNames[appt.id];
                 const dur = formatDuration(appt.starts_at, appt.ends_at);
+                const pmData = isCompleted ? PAYMENT_METHODS.find(p => p.value === appt.payment_method) : null;
+                const PmIconDay = pmData?.icon;
                 return (
                   <div
                     key={appt.id}
-                    onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
-                    className={`absolute rounded-xl border cursor-pointer hover:shadow-md transition-shadow z-10 overflow-hidden ${
+                    className={`absolute rounded-xl border z-10 overflow-hidden ${
                       isCompleted
-                        ? 'bg-nd-success/10 border-nd-success/25'
+                        ? 'bg-gradient-to-br from-nd-success/8 to-nd-success/12 border-nd-success/25'
                         : appt.status === 'scheduled'
-                        ? 'bg-nd-accent/15 border-nd-accent/30'
-                        : 'bg-lime-50 border-lime-200'
+                        ? 'bg-nd-accent/15 border-nd-accent/30 cursor-pointer hover:shadow-md transition-shadow'
+                        : 'bg-lime-50 border-lime-200 cursor-pointer hover:shadow-md transition-shadow'
                     }`}
                     style={{ top: style.top, height: style.height, left: '58px', right: '6px' }}
+                    onClick={(e) => { if (!isCompleted) { e.stopPropagation(); openEdit(appt); } }}
                   >
-                    <div className="px-3 py-2 h-full flex flex-col">
-                      <div className="flex items-start justify-between gap-1">
-                        <p className="text-sm font-bold text-nd-heading truncate leading-tight">
-                          {getApptDisplayName(appt)}
-                        </p>
-                        <span className="text-[11px] text-nd-muted shrink-0 font-medium">
-                          {formatTime(appt.starts_at)} - {formatTime(appt.ends_at)}
-                        </span>
-                      </div>
-                      {svcName && (
-                        <p className="text-xs text-nd-muted mt-0.5 truncate">{svcName}</p>
-                      )}
-                      <div className="flex items-center gap-2 mt-auto">
-                        {profMap[appt.professional_id] && (
-                          <span className="text-[10px] text-nd-muted">{profMap[appt.professional_id]}</span>
-                        )}
-                        {appt.total_amount > 0 && (
-                          <span className="text-[10px] font-bold text-nd-heading">{formatCurrency(appt.total_amount)}</span>
-                        )}
-                        <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-medium ${appt.status === 'scheduled' ? 'bg-nd-accent/20 text-nd-accent' : 'bg-lime-200/70 text-lime-700'}`}>{dur}</span>
-                        {isCompleted && <Check className="w-3 h-3 text-nd-success" />}
-                      </div>
-                      {!isCompleted && appt.status !== 'cancelled' && (
-                        <div className="flex gap-2 mt-1">
-                          {appt.advance_amount > 0 && (
-                            <span className="text-[9px] text-nd-accent">{t.deposit}: {formatCurrency(appt.advance_amount)}</span>
-                          )}
-                          <button onClick={(e) => { e.stopPropagation(); openCloseShift(appt); }}
-                            className="text-[10px] font-medium text-nd-success hover:underline ml-auto">{t.closeShift}</button>
+                    {isCompleted ? (
+                      /* ── Closed appointment: rich summary card ── */
+                      <div className="px-3 py-2 h-full flex flex-col gap-1">
+                        {/* Header row */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-nd-heading truncate leading-tight">{getApptDisplayName(appt)}</p>
+                            <p className="text-[10px] text-nd-muted">{formatTime(appt.starts_at)} – {formatTime(appt.ends_at)} · {dur}</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="flex items-center gap-0.5 text-[9px] font-semibold text-nd-success bg-nd-success/15 px-1.5 py-0.5 rounded-full">
+                              <Check className="w-2.5 h-2.5" /> Fechado
+                            </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
+                              className="text-[9px] font-medium text-nd-accent hover:underline px-1.5 py-0.5 rounded-lg hover:bg-nd-accent/10 transition-colors"
+                            >
+                              Editar
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </div>
+
+                        {/* Services */}
+                        {svcName && (
+                          <p className="text-[10px] text-nd-muted truncate leading-snug">{svcName}</p>
+                        )}
+
+                        {/* Financial summary */}
+                        <div className="flex items-center gap-2 flex-wrap mt-auto">
+                          {appt.total_amount > 0 && (
+                            <span className="text-xs font-bold text-nd-heading">{formatCurrency(appt.total_amount)}</span>
+                          )}
+                          {appt.discount > 0 && (
+                            <span className="text-[9px] text-nd-danger bg-nd-danger/10 px-1.5 py-0.5 rounded-full">
+                              -{formatCurrency(appt.discount)}
+                            </span>
+                          )}
+                          {appt.extras > 0 && (
+                            <span className="text-[9px] text-nd-success bg-nd-success/10 px-1.5 py-0.5 rounded-full">
+                              +{formatCurrency(appt.extras)}
+                            </span>
+                          )}
+                          {appt.advance_amount > 0 && (
+                            <span className="text-[9px] text-nd-accent bg-nd-accent/10 px-1.5 py-0.5 rounded-full">
+                              Sinal {formatCurrency(appt.advance_amount)}
+                            </span>
+                          )}
+                          {pmData && PmIconDay && (
+                            <span className="flex items-center gap-0.5 text-[9px] text-nd-muted ml-auto">
+                              <PmIconDay className="w-3 h-3" /> {pmData.label}
+                            </span>
+                          )}
+                          {profMap[appt.professional_id] && (
+                            <span className="text-[9px] text-nd-muted">{profMap[appt.professional_id]}</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* ── Open appointment card ── */
+                      <div className="px-3 py-2 h-full flex flex-col">
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="text-sm font-bold text-nd-heading truncate leading-tight">
+                            {getApptDisplayName(appt)}
+                          </p>
+                          <span className="text-[11px] text-nd-muted shrink-0 font-medium">
+                            {formatTime(appt.starts_at)} - {formatTime(appt.ends_at)}
+                          </span>
+                        </div>
+                        {svcName && (
+                          <p className="text-xs text-nd-muted mt-0.5 truncate">{svcName}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-auto">
+                          {profMap[appt.professional_id] && (
+                            <span className="text-[10px] text-nd-muted">{profMap[appt.professional_id]}</span>
+                          )}
+                          {appt.total_amount > 0 && (
+                            <span className="text-[10px] font-bold text-nd-heading">{formatCurrency(appt.total_amount)}</span>
+                          )}
+                          <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-medium ${appt.status === 'scheduled' ? 'bg-nd-accent/20 text-nd-accent' : 'bg-lime-200/70 text-lime-700'}`}>{dur}</span>
+                        </div>
+                        {appt.status !== 'cancelled' && (
+                          <div className="flex gap-2 mt-1">
+                            {appt.advance_amount > 0 && (
+                              <span className="text-[9px] text-nd-accent">{t.deposit}: {formatCurrency(appt.advance_amount)}</span>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); openCloseShift(appt); }}
+                              className="text-[10px] font-medium text-nd-success hover:underline ml-auto">{t.closeShift}</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1275,7 +1358,7 @@ export default function AgendaPage() {
                             return (
                               <div key={appt.id}
                                 className={`text-[9px] leading-tight truncate px-0.5 rounded ${
-                                  isCl ? 'text-nd-success/70' : appt.status === 'scheduled' ? 'text-nd-accent bg-nd-accent/10' : 'text-lime-700 bg-lime-50'
+                                  isCl ? 'text-nd-success bg-nd-success/10' : appt.status === 'scheduled' ? 'text-nd-accent bg-nd-accent/10' : 'text-lime-700 bg-lime-50'
                                 }`}
                                 onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
                               >
@@ -1316,7 +1399,7 @@ export default function AgendaPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-nd-border/30 shrink-0">
               <h2 className="text-base font-semibold text-nd-heading">
-                {modal === 'create' ? t.newAppointment : t.editAppointment}
+                {modal === 'create' ? t.newAppointment : selected?.status === 'completed' ? 'Editar Turno Fechado' : t.editAppointment}
               </h2>
               <button onClick={() => setModal('closed')}
                 className="p-1.5 rounded-xl hover:bg-nd-surface transition-colors">
@@ -1508,28 +1591,48 @@ export default function AgendaPage() {
                   {/* Status (edit only) */}
                   {modal === 'edit' && (
                     <div className="border-t border-nd-border/20 pt-4">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.status}</label>
-                          <select value={form.status}
-                            onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                            className="input-field !bg-nd-surface/30 text-sm">
-                            <option value="scheduled">{t.status_scheduled}</option>
-                            <option value="confirmed">{t.status_confirmed}</option>
-                            <option value="in_progress">{t.status_in_progress}</option>
-                            <option value="completed">{t.status_completed}</option>
-                            <option value="cancelled">{t.status_cancelled}</option>
-                            <option value="no_show">No show</option>
-                          </select>
+                      {selected?.status === 'completed' ? (
+                        /* Closed appointment — locked status banner */
+                        <div className="flex items-center gap-3 p-3 rounded-xl bg-nd-success/8 border border-nd-success/20">
+                          <Check className="w-4 h-4 text-nd-success shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-nd-success">Turno Fechado</p>
+                            <p className="text-[10px] text-nd-muted mt-0.5">
+                              {selected.closed_at ? `Fechado em ${new Date(selected.closed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}` : 'Status concluído'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.notes}</label>
+                            <input type="text" value={form.notes}
+                              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                              placeholder={t.notes + '...'}
+                              className="input-field !bg-nd-surface/30 text-sm w-40" />
+                          </div>
                         </div>
-                        <div>
-                          <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.notes}</label>
-                          <input type="text" value={form.notes}
-                            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                            placeholder={t.notes + '...'}
-                            className="input-field !bg-nd-surface/30 text-sm" />
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.status}</label>
+                            <select value={form.status}
+                              onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                              className="input-field !bg-nd-surface/30 text-sm">
+                              <option value="scheduled">{t.status_scheduled}</option>
+                              <option value="confirmed">{t.status_confirmed}</option>
+                              <option value="in_progress">{t.status_in_progress}</option>
+                              <option value="completed">{t.status_completed}</option>
+                              <option value="cancelled">{t.status_cancelled}</option>
+                              <option value="no_show">No show</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] uppercase tracking-wider text-nd-muted font-medium mb-1.5 block">{t.notes}</label>
+                            <input type="text" value={form.notes}
+                              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                              placeholder={t.notes + '...'}
+                              className="input-field !bg-nd-surface/30 text-sm" />
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
 
