@@ -54,6 +54,7 @@ export default function FinanceiroPage() {
   const [prevClosing, setPrevClosing] = useState<MonthlyClosing | null>(null);
   const [nextMonthAdvances, setNextMonthAdvances] = useState<TxRow[]>([]);
   const [pendingAdvanceTotal, setPendingAdvanceTotal] = useState(0);
+  const [closedAdvances, setClosedAdvances] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<TxModalMode>('closed');
   const [saving, setSaving] = useState(false);
@@ -115,7 +116,7 @@ export default function FinanceiroPage() {
     setLoading(true);
     try {
       // Load transactions WITHOUT joins first (fast) — names loaded on demand
-      const [txRes, closingRes, prevClosingRes, nextAdvRes, pendingAdvRes] = await Promise.all([
+      const [txRes, closingRes, prevClosingRes, nextAdvRes, pendingAdvRes, advWithApptRes] = await Promise.all([
         supabase
           .from('transactions')
           .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total, client_id, professional_id')
@@ -154,6 +155,15 @@ export default function FinanceiroPage() {
           .neq('status', 'cancelled')
           .gte('starts_at', `${monthStart}T00:00:00`)
           .lte('starts_at', `${monthEndDate}T23:59:59`),
+        // Adiantamento transactions with appointment status to filter closed ones
+        supabase
+          .from('transactions')
+          .select('total_amount, payment_pix, payment_cash, payment_card, payment_transfer, appointment:appointments!appointment_id(status)')
+          .eq('salon_id', salon.id)
+          .eq('category', 'adiantamento')
+          .eq('type', 'sale')
+          .gte('transaction_date', `${monthStart}T00:00:00`)
+          .lte('transaction_date', `${monthEndDate}T23:59:59`),
       ]);
       setTransactions((txRes.data || []) as TxRow[]);
       setClosing(closingRes.data as MonthlyClosing | null);
@@ -161,6 +171,11 @@ export default function FinanceiroPage() {
       setNextMonthAdvances((nextAdvRes.data || []) as TxRow[]);
       const pendingAdv = (pendingAdvRes.data || []) as any[];
       setPendingAdvanceTotal(pendingAdv.reduce((s: number, a: any) => s + (a.advance_amount || 0), 0));
+      const allAdv = (advWithApptRes.data || []) as any[];
+      setClosedAdvances(allAdv.filter((t: any) => {
+        const appt = Array.isArray(t.appointment) ? t.appointment[0] : t.appointment;
+        return appt?.status === 'completed';
+      }));
     } catch (e) {
       console.error(e);
     }
@@ -190,8 +205,8 @@ export default function FinanceiroPage() {
     loadNames();
   }, [tab, namesLoaded, salon?.id, transactions.length]);
 
-  // Reset namesLoaded when month changes
-  useEffect(() => { setNamesLoaded(false); }, [monthDate]);
+  // Reset namesLoaded and closedAdvances when month changes
+  useEffect(() => { setNamesLoaded(false); setClosedAdvances([]); }, [monthDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -203,10 +218,15 @@ export default function FinanceiroPage() {
 
   // Faturamento = only turnos (adiantamentos are held funds, not revenue)
   const totalRevenue = turnoSales.reduce((s, t) => s + t.total_amount, 0);
-  const revenuePix = turnoSales.reduce((s, t) => s + t.payment_pix, 0);
-  const revenueCash = turnoSales.reduce((s, t) => s + t.payment_cash, 0);
-  const revenueCard = turnoSales.reduce((s, t) => s + t.payment_card, 0);
-  const revenueTransfer = turnoSales.reduce((s, t) => s + t.payment_transfer, 0);
+  // Payment breakdown = turno remaining + advances already collected for closed appointments
+  const revenuePix = turnoSales.reduce((s, t) => s + t.payment_pix, 0)
+    + closedAdvances.reduce((s, t: any) => s + (t.payment_pix || 0), 0);
+  const revenueCash = turnoSales.reduce((s, t) => s + t.payment_cash, 0)
+    + closedAdvances.reduce((s, t: any) => s + (t.payment_cash || 0), 0);
+  const revenueCard = turnoSales.reduce((s, t) => s + t.payment_card, 0)
+    + closedAdvances.reduce((s, t: any) => s + (t.payment_card || 0), 0);
+  const revenueTransfer = turnoSales.reduce((s, t) => s + t.payment_transfer, 0)
+    + closedAdvances.reduce((s, t: any) => s + (t.payment_transfer || 0), 0);
 
   const totalExpenses = expenses.reduce((s, t) => s + t.total_amount, 0);
   const expensePix = expenses.reduce((s, t) => s + t.payment_pix, 0);
