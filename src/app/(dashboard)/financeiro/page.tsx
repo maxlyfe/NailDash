@@ -116,7 +116,7 @@ export default function FinanceiroPage() {
     setLoading(true);
     try {
       // Load transactions WITHOUT joins first (fast) — names loaded on demand
-      const [txRes, closingRes, prevClosingRes, nextAdvRes, pendingAdvRes, advWithApptRes] = await Promise.all([
+      const [txRes, closingRes, prevClosingRes, nextAdvRes, pendingAdvRes] = await Promise.all([
         supabase
           .from('transactions')
           .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total, client_id, professional_id')
@@ -145,37 +145,25 @@ export default function FinanceiroPage() {
           .lte('transaction_date', `${nextMonthRange.end}T23:59:59`)
           .gte('registered_at', `${monthStart}T00:00:00`)
           .lte('registered_at', `${monthEndDate}T23:59:59`),
-        // Appointments with advances that are NOT completed (pending advances)
+        // Appointments in month — used for pending advances AND closed advance breakdown
         supabase
           .from('appointments')
-          .select('advance_amount, status')
+          .select('advance_amount, advance_payment_method, status')
           .eq('salon_id', salon.id)
           .gt('advance_amount', 0)
-          .neq('status', 'completed')
           .neq('status', 'cancelled')
           .gte('starts_at', `${monthStart}T00:00:00`)
           .lte('starts_at', `${monthEndDate}T23:59:59`),
-        // Adiantamento transactions with appointment status to filter closed ones
-        supabase
-          .from('transactions')
-          .select('total_amount, payment_pix, payment_cash, payment_card, payment_transfer, appointment:appointments!appointment_id(status)')
-          .eq('salon_id', salon.id)
-          .eq('category', 'adiantamento')
-          .eq('type', 'sale')
-          .gte('transaction_date', `${monthStart}T00:00:00`)
-          .lte('transaction_date', `${monthEndDate}T23:59:59`),
       ]);
       setTransactions((txRes.data || []) as TxRow[]);
       setClosing(closingRes.data as MonthlyClosing | null);
       setPrevClosing(prevClosingRes.data as MonthlyClosing | null);
       setNextMonthAdvances((nextAdvRes.data || []) as TxRow[]);
-      const pendingAdv = (pendingAdvRes.data || []) as any[];
-      setPendingAdvanceTotal(pendingAdv.reduce((s: number, a: any) => s + (a.advance_amount || 0), 0));
-      const allAdv = (advWithApptRes.data || []) as any[];
-      setClosedAdvances(allAdv.filter((t: any) => {
-        const appt = Array.isArray(t.appointment) ? t.appointment[0] : t.appointment;
-        return appt?.status === 'completed';
-      }));
+      const allApptAdv = (pendingAdvRes.data || []) as any[];
+      // Pending advances = open appointments only
+      setPendingAdvanceTotal(allApptAdv.filter((a: any) => a.status !== 'completed').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0));
+      // Closed advances = completed appointments — use appointment data (unique, no duplicates from multiple tx)
+      setClosedAdvances(allApptAdv.filter((a: any) => a.status === 'completed'));
     } catch (e) {
       console.error(e);
     }
@@ -218,15 +206,17 @@ export default function FinanceiroPage() {
 
   // Faturamento = only turnos (adiantamentos are held funds, not revenue)
   const totalRevenue = turnoSales.reduce((s, t) => s + t.total_amount, 0);
-  // Payment breakdown = turno remaining + advances already collected for closed appointments
-  const revenuePix = turnoSales.reduce((s, t) => s + t.payment_pix, 0)
-    + closedAdvances.reduce((s, t: any) => s + (t.payment_pix || 0), 0);
-  const revenueCash = turnoSales.reduce((s, t) => s + t.payment_cash, 0)
-    + closedAdvances.reduce((s, t: any) => s + (t.payment_cash || 0), 0);
-  const revenueCard = turnoSales.reduce((s, t) => s + t.payment_card, 0)
-    + closedAdvances.reduce((s, t: any) => s + (t.payment_card || 0), 0);
-  const revenueTransfer = turnoSales.reduce((s, t) => s + t.payment_transfer, 0)
-    + closedAdvances.reduce((s, t: any) => s + (t.payment_transfer || 0), 0);
+  // Payment breakdown = turno remaining + closed advance amounts grouped by payment method
+  // Use appointment.advance_payment_method (unique per appointment, no duplicate transactions)
+  const closedAdvPix = closedAdvances.filter((a: any) => a.advance_payment_method === 'pix').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
+  const closedAdvCash = closedAdvances.filter((a: any) => a.advance_payment_method === 'cash').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
+  const closedAdvCard = closedAdvances.filter((a: any) => a.advance_payment_method === 'card').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
+  const closedAdvTransfer = closedAdvances.filter((a: any) => a.advance_payment_method === 'transfer').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
+
+  const revenuePix = turnoSales.reduce((s, t) => s + t.payment_pix, 0) + closedAdvPix;
+  const revenueCash = turnoSales.reduce((s, t) => s + t.payment_cash, 0) + closedAdvCash;
+  const revenueCard = turnoSales.reduce((s, t) => s + t.payment_card, 0) + closedAdvCard;
+  const revenueTransfer = turnoSales.reduce((s, t) => s + t.payment_transfer, 0) + closedAdvTransfer;
 
   const totalExpenses = expenses.reduce((s, t) => s + t.total_amount, 0);
   const expensePix = expenses.reduce((s, t) => s + t.payment_pix, 0);
