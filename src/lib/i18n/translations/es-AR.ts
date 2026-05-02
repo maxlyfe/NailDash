@@ -260,6 +260,19 @@ const esAR: Translations = {
   month_10: 'noviembre',
   month_11: 'diciembre',
 
+  // ── Annual Report ──
+  annual: 'Anual',
+  annualReport: 'Reporte Anual',
+  annualSubtitle: 'Resumen anual de facturación y gastos',
+  annualRevenue: 'Facturación Bruta',
+  annualExpenses: 'Total Gastos',
+  annualBalance: 'Resultado del Año',
+  annualRevenueByMethod: 'Facturación por forma de pago',
+  monthlyBreakdown: 'Detalle Mensual',
+  annualNoData: 'Sin datos para este año',
+  annualNoDataHint: 'No hay movimientos registrados en este período.',
+  irNote: 'Valores calculados a partir de los turnos cerrados y adelantos recibidos.',
+
   // ── Short day names (agenda headers) ──
   dayShort_sun: 'Dom',
   dayShort_mon: 'Lun',

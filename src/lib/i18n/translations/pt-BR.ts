@@ -258,6 +258,19 @@ const ptBR = {
   month_10: 'novembro',
   month_11: 'dezembro',
 
+  // ── Annual Report ──
+  annual: 'Anual',
+  annualReport: 'Relatório Anual',
+  annualSubtitle: 'Resumo anual de faturamento e despesas',
+  annualRevenue: 'Faturamento Bruto',
+  annualExpenses: 'Total Despesas',
+  annualBalance: 'Resultado do Ano',
+  annualRevenueByMethod: 'Faturamento por forma de pagamento',
+  monthlyBreakdown: 'Detalhamento Mensal',
+  annualNoData: 'Sem dados para este ano',
+  annualNoDataHint: 'Não há movimentações registradas neste período.',
+  irNote: 'Valores apurados a partir dos turnos fechados e adiantamentos recebidos.',
+
   // ── Short day names (agenda headers) ──
   dayShort_sun: 'Dom',
   dayShort_mon: 'Seg',

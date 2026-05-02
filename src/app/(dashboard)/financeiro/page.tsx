@@ -8,10 +8,10 @@ import {
   DollarSign, TrendingUp, TrendingDown, Loader2,
   Plus, X, Save, Trash2, CreditCard, Banknote, Smartphone,
   ArrowRightLeft, ChevronLeft, ChevronRight,
-  PiggyBank, UserCheck, AlertTriangle,
+  PiggyBank, AlertTriangle, CalendarDays, Info,
 } from 'lucide-react';
 
-type TabView = 'resumo' | 'receitas' | 'despesas' | 'fechamento';
+type TabView = 'resumo' | 'receitas' | 'despesas' | 'fechamento' | 'anual';
 type TxModalMode = 'closed' | 'receita' | 'despesa';
 
 type TxRow = {
@@ -43,6 +43,16 @@ type MonthlyClosing = {
   notes: string | null;
 };
 
+type AnnualMonthData = {
+  month: number;
+  revenue: number;
+  expenses: number;
+  pix: number;
+  cash: number;
+  card: number;
+  transfer: number;
+};
+
 export default function FinanceiroPage() {
   const { salon, loading: authLoading } = useAuth();
   const { t, locale } = useT();
@@ -58,6 +68,11 @@ export default function FinanceiroPage() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<TxModalMode>('closed');
   const [saving, setSaving] = useState(false);
+
+  // Annual state
+  const [annualYear, setAnnualYear] = useState(() => new Date().getFullYear());
+  const [annualData, setAnnualData] = useState<AnnualMonthData[]>([]);
+  const [annualLoading, setAnnualLoading] = useState(false);
 
   const monthNames = [t.month_0, t.month_1, t.month_2, t.month_3, t.month_4, t.month_5, t.month_6, t.month_7, t.month_8, t.month_9, t.month_10, t.month_11];
 
@@ -80,25 +95,22 @@ export default function FinanceiroPage() {
     return `${y}-${m}-${String(d.getDate()).padStart(2, '0')}`;
   })();
 
-  // Previous month start date
   const prevMonthStart = (() => {
     const [y, m] = monthDate.split('-').map(Number);
     const d = new Date(y, m - 2, 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
   })();
 
-  // Next month date range (for advances that are in the bank but belong to next month)
   const nextMonthRange = (() => {
     const [y, m] = monthDate.split('-').map(Number);
-    const start = new Date(y, m, 1); // first day of next month
-    const end = new Date(y, m + 1, 0); // last day of next month
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 0);
     return {
       start: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`,
       end: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`,
     };
   })();
 
-  // Form
   const [form, setForm] = useState({
     description: '', total_amount: '', category: '',
     payment_method: 'pix' as 'pix' | 'cash' | 'card' | 'transfer',
@@ -111,11 +123,11 @@ export default function FinanceiroPage() {
     setMonthDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
 
+  // ── Monthly fetch ──
   const fetchData = useCallback(async () => {
-    if (!salon?.id) return; // Wait for salon — don't show zeros
+    if (!salon?.id) return;
     setLoading(true);
     try {
-      // Load transactions WITHOUT joins first (fast) — names loaded on demand
       const [txRes, closingRes, prevClosingRes, nextAdvRes, pendingAdvRes] = await Promise.all([
         supabase
           .from('transactions')
@@ -145,7 +157,6 @@ export default function FinanceiroPage() {
           .lte('transaction_date', `${nextMonthRange.end}T23:59:59`)
           .gte('registered_at', `${monthStart}T00:00:00`)
           .lte('registered_at', `${monthEndDate}T23:59:59`),
-        // Appointments in month — used for pending advances AND closed advance breakdown
         supabase
           .from('appointments')
           .select('advance_amount, advance_payment_method, status')
@@ -160,9 +171,7 @@ export default function FinanceiroPage() {
       setPrevClosing(prevClosingRes.data as MonthlyClosing | null);
       setNextMonthAdvances((nextAdvRes.data || []) as TxRow[]);
       const allApptAdv = (pendingAdvRes.data || []) as any[];
-      // Pending advances = open appointments only
       setPendingAdvanceTotal(allApptAdv.filter((a: any) => a.status !== 'completed').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0));
-      // Closed advances = completed appointments — use appointment data (unique, no duplicates from multiple tx)
       setClosedAdvances(allApptAdv.filter((a: any) => a.status === 'completed'));
     } catch (e) {
       console.error(e);
@@ -170,7 +179,70 @@ export default function FinanceiroPage() {
     setLoading(false);
   }, [salon?.id, monthDate]);
 
-  // Lazy-load client/professional names only when viewing receitas/despesas tabs
+  // ── Annual fetch ──
+  const fetchAnnual = useCallback(async () => {
+    if (!salon?.id) return;
+    setAnnualLoading(true);
+    try {
+      const startDate = `${annualYear}-01-01T00:00:00`;
+      const endDate = `${annualYear}-12-31T23:59:59`;
+
+      const [txRes, apptRes] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('type, category, total_amount, payment_pix, payment_cash, payment_card, payment_transfer, transaction_date')
+          .eq('salon_id', salon.id)
+          .gte('transaction_date', startDate)
+          .lte('transaction_date', endDate),
+        supabase
+          .from('appointments')
+          .select('advance_amount, advance_payment_method, starts_at')
+          .eq('salon_id', salon.id)
+          .eq('status', 'completed')
+          .gt('advance_amount', 0)
+          .gte('starts_at', startDate)
+          .lte('starts_at', endDate),
+      ]);
+
+      // Initialize all 12 months
+      const map: Record<number, AnnualMonthData> = {};
+      for (let m = 1; m <= 12; m++) {
+        map[m] = { month: m, revenue: 0, expenses: 0, pix: 0, cash: 0, card: 0, transfer: 0 };
+      }
+
+      // Transactions
+      for (const tx of (txRes.data || []) as any[]) {
+        const m = new Date(tx.transaction_date).getMonth() + 1;
+        if (tx.type === 'sale' && tx.category === 'turno') {
+          map[m].revenue += tx.total_amount || 0;
+          map[m].pix += tx.payment_pix || 0;
+          map[m].cash += tx.payment_cash || 0;
+          map[m].card += tx.payment_card || 0;
+          map[m].transfer += tx.payment_transfer || 0;
+        } else if (tx.type === 'expense') {
+          map[m].expenses += tx.total_amount || 0;
+        }
+      }
+
+      // Closed advances (completed appointments in year)
+      for (const appt of (apptRes.data || []) as any[]) {
+        const m = new Date(appt.starts_at).getMonth() + 1;
+        const amt = appt.advance_amount || 0;
+        map[m].revenue += amt;
+        if (appt.advance_payment_method === 'pix') map[m].pix += amt;
+        else if (appt.advance_payment_method === 'cash') map[m].cash += amt;
+        else if (appt.advance_payment_method === 'card') map[m].card += amt;
+        else if (appt.advance_payment_method === 'transfer') map[m].transfer += amt;
+      }
+
+      setAnnualData(Object.values(map));
+    } catch (e) {
+      console.error(e);
+    }
+    setAnnualLoading(false);
+  }, [salon?.id, annualYear]);
+
+  // Lazy-load names for receitas/despesas
   const [namesLoaded, setNamesLoaded] = useState(false);
   useEffect(() => {
     if ((tab !== 'receitas' && tab !== 'despesas') || namesLoaded || !salon?.id || transactions.length === 0) return;
@@ -193,21 +265,18 @@ export default function FinanceiroPage() {
     loadNames();
   }, [tab, namesLoaded, salon?.id, transactions.length]);
 
-  // Reset namesLoaded and closedAdvances when month changes
   useEffect(() => { setNamesLoaded(false); setClosedAdvances([]); }, [monthDate]);
-
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (tab === 'anual') fetchAnnual();
+  }, [tab, fetchAnnual]);
 
-  // Computed
+  // ── Monthly computed values ──
   const sales = transactions.filter(t => t.type === 'sale');
   const turnoSales = sales.filter(t => t.category === 'turno');
-  const advanceSales = sales.filter(t => t.category === 'adiantamento');
   const expenses = transactions.filter(t => t.type === 'expense');
 
-  // Faturamento = only turnos (adiantamentos are held funds, not revenue)
   const totalRevenue = turnoSales.reduce((s, t) => s + t.total_amount, 0);
-  // Payment breakdown = turno remaining + closed advance amounts grouped by payment method
-  // Use appointment.advance_payment_method (unique per appointment, no duplicate transactions)
   const closedAdvPix = closedAdvances.filter((a: any) => a.advance_payment_method === 'pix').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
   const closedAdvCash = closedAdvances.filter((a: any) => a.advance_payment_method === 'cash').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
   const closedAdvCard = closedAdvances.filter((a: any) => a.advance_payment_method === 'card').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
@@ -224,32 +293,30 @@ export default function FinanceiroPage() {
   const expenseCard = expenses.reduce((s, t) => s + t.payment_card, 0);
   const expenseTransfer = expenses.reduce((s, t) => s + t.payment_transfer, 0);
 
-  // Adiantamentos pendentes (apenas de turnos ainda não fechados)
-  // pendingAdvanceTotal is computed from appointments, not transactions
-
-  // Next month advances (money physically in bank but belongs to future)
   const totalNextAdvances = nextMonthAdvances.reduce((s, t) => s + t.total_amount, 0);
   const nextAdvPix = nextMonthAdvances.reduce((s, t) => s + t.payment_pix, 0);
   const nextAdvCash = nextMonthAdvances.reduce((s, t) => s + t.payment_cash, 0);
   const nextAdvCard = nextMonthAdvances.reduce((s, t) => s + t.payment_card, 0);
   const nextAdvTransfer = nextMonthAdvances.reduce((s, t) => s + t.payment_transfer, 0);
 
-  // Auto-calculate previous month's remaining balance
-  const prevMonthBalance = (() => {
-    if (!prevClosing) return 0;
-    // We need to compute what the previous month ended with
-    // But we don't have previous month transactions here
-    // So we use the stored closing balance
-    return prevClosing.starting_balance || 0;
-  })();
-
+  const prevMonthBalance = prevClosing?.starting_balance || 0;
   const startingBalance = closing?.starting_balance ?? prevMonthBalance;
-  // Saldo = faturamento + fundo de caixa (starting balance) - despesas
   const fundoCaixa = totalRevenue + startingBalance - totalExpenses;
+
+  // ── Annual computed values ──
+  const annualTotalRevenue = annualData.reduce((s, m) => s + m.revenue, 0);
+  const annualTotalExpenses = annualData.reduce((s, m) => s + m.expenses, 0);
+  const annualTotalBalance = annualTotalRevenue - annualTotalExpenses;
+  const annualTotalPix = annualData.reduce((s, m) => s + m.pix, 0);
+  const annualTotalCash = annualData.reduce((s, m) => s + m.cash, 0);
+  const annualTotalCard = annualData.reduce((s, m) => s + m.card, 0);
+  const annualTotalTransfer = annualData.reduce((s, m) => s + m.transfer, 0);
+  const annualMaxRevenue = Math.max(...annualData.map(m => m.revenue), 1);
+  const annualHasData = annualTotalRevenue > 0 || annualTotalExpenses > 0;
 
   const fmt = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: t.currency });
 
-  // Save transaction
+  // ── Save transaction ──
   const handleSave = async () => {
     if (!salon?.id || !form.description.trim() || !form.total_amount) return;
     setSaving(true);
@@ -284,6 +351,7 @@ export default function FinanceiroPage() {
 
       setModal('closed');
       await fetchData();
+      if (tab === 'anual') fetchAnnual();
     } catch (e: any) { alert(`${t.error}: ${e.message}`); }
     setSaving(false);
   };
@@ -292,9 +360,9 @@ export default function FinanceiroPage() {
     if (!confirm(t.deleteTransactionConfirm)) return;
     await supabase.from('transactions').delete().eq('id', id);
     fetchData();
+    if (tab === 'anual') fetchAnnual();
   };
 
-  // Save monthly closing
   const saveClosing = async (field: string, value: number) => {
     if (!salon?.id) return;
     if (closing) {
@@ -309,10 +377,8 @@ export default function FinanceiroPage() {
     fetchData();
   };
 
-  // Auto-fill starting balance from previous month's result
   const autoFillStartingBalance = async () => {
     if (!salon?.id) return;
-    // Fetch previous month transactions to calculate the actual ending balance
     const [y, m] = monthDate.split('-').map(Number);
     const prevStart = new Date(y, m - 2, 1);
     const prevEnd = new Date(y, m - 1, 0);
@@ -322,7 +388,7 @@ export default function FinanceiroPage() {
     const [prevTxRes, prevClRes] = await Promise.all([
       supabase
         .from('transactions')
-        .select('type, total_amount')
+        .select('type, total_amount, category')
         .eq('salon_id', salon.id)
         .gte('transaction_date', `${prevStartStr}T00:00:00`)
         .lte('transaction_date', `${prevEndStr}T23:59:59`),
@@ -338,9 +404,7 @@ export default function FinanceiroPage() {
     const prevStartBal = prevClRes.data?.starting_balance || 0;
     const prevRevenue = prevTxs.filter((t: any) => t.type === 'sale' && t.category === 'turno').reduce((s: number, t: any) => s + t.total_amount, 0);
     const prevExpense = prevTxs.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + t.total_amount, 0);
-    const calculatedBalance = prevStartBal + prevRevenue - prevExpense;
-
-    await saveClosing('starting_balance', calculatedBalance);
+    await saveClosing('starting_balance', prevStartBal + prevRevenue - prevExpense);
   };
 
   const openModal = (type: TxModalMode) => {
@@ -357,6 +421,7 @@ export default function FinanceiroPage() {
     { id: 'receitas', label: t.revenues },
     { id: 'despesas', label: t.expenses },
     { id: 'fechamento', label: t.closing },
+    { id: 'anual', label: t.annual },
   ];
 
   const modalTitles: Record<TxModalMode, string> = {
@@ -375,244 +440,413 @@ export default function FinanceiroPage() {
           <h1 className="page-title">{t.financial}</h1>
           <p className="text-nd-muted text-sm mt-1">{t.financialControl}</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => openModal('receita')} className="btn-primary text-sm">
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">{t.revenue}</span>
-          </button>
-          <button onClick={() => openModal('despesa')} className="btn-secondary text-sm">
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">{t.expense}</span>
-          </button>
-        </div>
+        {tab !== 'anual' && (
+          <div className="flex gap-2">
+            <button onClick={() => openModal('receita')} className="btn-primary text-sm">
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">{t.revenue}</span>
+            </button>
+            <button onClick={() => openModal('despesa')} className="btn-secondary text-sm">
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">{t.expense}</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Month nav */}
+      {/* Navigation row */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button onClick={() => navigateMonth(-1)} className="btn-ghost p-2">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-sm font-semibold text-nd-heading capitalize min-w-[140px] text-center">{monthLabel}</span>
-          <button onClick={() => navigateMonth(1)} className="btn-ghost p-2">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+        {/* Month nav (hidden on annual tab) */}
+        {tab !== 'anual' ? (
+          <div className="flex items-center gap-2">
+            <button onClick={() => navigateMonth(-1)} className="btn-ghost p-2">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-sm font-semibold text-nd-heading capitalize min-w-[140px] text-center">{monthLabel}</span>
+            <button onClick={() => navigateMonth(1)} className="btn-ghost p-2">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          /* Year nav (only on annual tab) */
+          <div className="flex items-center gap-2">
+            <button onClick={() => setAnnualYear(y => y - 1)} className="btn-ghost p-2">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-sm font-semibold text-nd-heading min-w-[60px] text-center">{annualYear}</span>
+            <button onClick={() => setAnnualYear(y => y + 1)} className="btn-ghost p-2">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Tabs */}
-        <div className="flex gap-1 bg-nd-surface rounded-xl p-0.5 w-full sm:w-auto">
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`text-xs px-3 py-1.5 rounded-lg transition-all flex-1 sm:flex-none ${tab === t.id ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'}`}>
-              {t.label}
+        <div className="flex gap-1 bg-nd-surface rounded-xl p-0.5 w-full sm:w-auto overflow-x-auto">
+          {TABS.map(tb => (
+            <button key={tb.id} onClick={() => setTab(tb.id)}
+              className={`text-xs px-3 py-1.5 rounded-lg transition-all flex-1 sm:flex-none whitespace-nowrap ${
+                tab === tb.id ? 'bg-white shadow-soft text-nd-heading font-semibold' : 'text-nd-muted'
+              }`}>
+              {tb.label}
             </button>
           ))}
         </div>
       </div>
 
-      {loading ? (
-        <div className="card p-10 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-nd-accent" />
-        </div>
-      ) : (
-        <>
-          {/* RESUMO */}
-          {tab === 'resumo' && (
-            <>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <StatCard label={t.billing} value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
-                <StatCard label={t.expenses} value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
-                <StatCard label={t.advances || 'Adiantamentos'} value={fmt(pendingAdvanceTotal)} color="text-nd-accent" icon={ArrowRightLeft} iconBg="bg-nd-accent/10" />
-                <StatCard label={t.balance} value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
-              </div>
+      {/* ── MONTHLY TABS ── */}
+      {tab !== 'anual' && (
+        loading ? (
+          <div className="card p-10 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-nd-accent" />
+          </div>
+        ) : (
+          <>
+            {/* RESUMO */}
+            {tab === 'resumo' && (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <StatCard label={t.billing} value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
+                  <StatCard label={t.expenses} value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
+                  <StatCard label={t.advances || 'Adiantamentos'} value={fmt(pendingAdvanceTotal)} color="text-nd-accent" icon={ArrowRightLeft} iconBg="bg-nd-accent/10" />
+                  <StatCard label={t.balance} value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
+                </div>
 
-              {/* Revenue breakdown */}
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div className="card p-5">
-                  <h3 className="section-label mb-3">{t.revenueByMethod}</h3>
-                  <div className="space-y-2">
-                    {locale !== 'es-AR' && revenuePix > 0 && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(revenuePix)} />}
-                    {(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash) > 0 && <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)} />}
-                    {revenueCard > 0 && <PayRow icon={CreditCard} label={t.pay_card} value={fmt(revenueCard)} />}
-                    {revenueTransfer > 0 && <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(revenueTransfer)} />}
-                  </div>
-                  <div className="divider mt-3 pt-3">
-                    <div className="flex justify-between text-sm font-semibold">
-                      <span className="text-nd-heading">{t.inBank}</span>
-                      <span className="text-nd-accent">{fmt(locale === 'es-AR' ? revenueCard + revenueTransfer : revenuePix + revenueCard + revenueTransfer)}</span>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="card p-5">
+                    <h3 className="section-label mb-3">{t.revenueByMethod}</h3>
+                    <div className="space-y-2">
+                      {locale !== 'es-AR' && revenuePix > 0 && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(revenuePix)} />}
+                      {(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash) > 0 && <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)} />}
+                      {revenueCard > 0 && <PayRow icon={CreditCard} label={t.pay_card} value={fmt(revenueCard)} />}
+                      {revenueTransfer > 0 && <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(revenueTransfer)} />}
                     </div>
-                    <div className="flex justify-between text-sm font-semibold mt-1">
-                      <span className="text-nd-heading">{t.inCash}</span>
-                      <span className="text-nd-success">{fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)}</span>
+                    <div className="divider mt-3 pt-3">
+                      <div className="flex justify-between text-sm font-semibold">
+                        <span className="text-nd-heading">{t.inBank}</span>
+                        <span className="text-nd-accent">{fmt(locale === 'es-AR' ? revenueCard + revenueTransfer : revenuePix + revenueCard + revenueTransfer)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-semibold mt-1">
+                        <span className="text-nd-heading">{t.inCash}</span>
+                        <span className="text-nd-success">{fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="card p-5">
+                    <h3 className="section-label mb-3">{t.expenseByMethod}</h3>
+                    <div className="space-y-2">
+                      {locale !== 'es-AR' && expensePix > 0 && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(expensePix)} />}
+                      {(locale === 'es-AR' ? expenseCash + expensePix : expenseCash) > 0 && <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? expenseCash + expensePix : expenseCash)} />}
+                      {expenseCard > 0 && <PayRow icon={CreditCard} label={t.pay_card} value={fmt(expenseCard)} />}
+                      {expenseTransfer > 0 && <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(expenseTransfer)} />}
                     </div>
                   </div>
                 </div>
+              </>
+            )}
 
+            {/* RECEITAS */}
+            {tab === 'receitas' && (
+              <TxList
+                items={sales}
+                emptyLabel={t.noRevenueRecorded}
+                colorClass="text-nd-success"
+                prefix="+"
+                fmt={fmt}
+                onDelete={handleDelete}
+                getClientName={getClientName}
+                locale={locale}
+              />
+            )}
+
+            {/* DESPESAS */}
+            {tab === 'despesas' && (
+              <TxList
+                items={expenses}
+                emptyLabel={t.noExpenseRecorded}
+                colorClass="text-nd-danger"
+                prefix="-"
+                fmt={fmt}
+                onDelete={handleDelete}
+                getClientName={getClientName}
+                locale={locale}
+              />
+            )}
+
+            {/* FECHAMENTO */}
+            {tab === 'fechamento' && (
+              <div className="space-y-4">
                 <div className="card p-5">
-                  <h3 className="section-label mb-3">{t.expenseByMethod}</h3>
-                  <div className="space-y-2">
-                    {locale !== 'es-AR' && expensePix > 0 && <PayRow icon={Smartphone} label={t.pay_pix} value={fmt(expensePix)} />}
-                    {(locale === 'es-AR' ? expenseCash + expensePix : expenseCash) > 0 && <PayRow icon={Banknote} label={t.pay_cash} value={fmt(locale === 'es-AR' ? expenseCash + expensePix : expenseCash)} />}
-                    {expenseCard > 0 && <PayRow icon={CreditCard} label={t.pay_card} value={fmt(expenseCard)} />}
-                    {expenseTransfer > 0 && <PayRow icon={ArrowRightLeft} label={t.pay_transfer} value={fmt(expenseTransfer)} />}
+                  <h3 className="text-sm font-semibold text-nd-heading mb-4">{t.closingTitle} — {monthLabel}</h3>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between py-2 gap-2">
+                      <span className="text-xs sm:text-sm text-nd-text font-medium">{t.startingCash}</span>
+                      <div className="flex items-center gap-2">
+                        <ClosingValue
+                          value={startingBalance}
+                          onSave={(v) => saveClosing('starting_balance', v)}
+                          fmt={fmt}
+                          editLabel={t.edit}
+                        />
+                        <button
+                          onClick={autoFillStartingBalance}
+                          className="text-[10px] text-nd-accent hover:underline shrink-0"
+                          title={t.autoFillPrevMonth}
+                        >
+                          {t.auto}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="divider" />
+
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-sm text-nd-success font-medium">+ {t.monthlyBilling}</span>
+                      <span className="text-sm font-bold text-nd-success">{fmt(totalRevenue)}</span>
+                    </div>
+                    <div className="pl-4 space-y-1">
+                      {locale !== 'es-AR' && <MiniRow label={t.pay_pix} value={fmt(revenuePix)} />}
+                      <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)} />
+                      <MiniRow label={t.pay_card} value={fmt(revenueCard)} />
+                      <MiniRow label={t.pay_transfer} value={fmt(revenueTransfer)} />
+                    </div>
+
+                    <div className="divider" />
+
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-sm text-nd-danger font-medium">- {t.monthlyExpenses}</span>
+                      <span className="text-sm font-bold text-nd-danger">{fmt(totalExpenses)}</span>
+                    </div>
+                    <div className="pl-4 space-y-1">
+                      {locale !== 'es-AR' && <MiniRow label={t.pay_pix} value={fmt(expensePix)} />}
+                      <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? expenseCash + expensePix : expenseCash)} />
+                      <MiniRow label={t.pay_card} value={fmt(expenseCard)} />
+                      <MiniRow label={t.pay_transfer} value={fmt(expenseTransfer)} />
+                    </div>
+
+                    <div className="divider" />
+
+                    <div className="flex justify-between items-center py-2 bg-nd-surface/50 rounded-xl px-4 -mx-1">
+                      <span className="text-sm font-bold text-nd-heading">= {t.monthlyBalance}</span>
+                      <span className={`text-lg font-bold ${fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'}`}>
+                        {fmt(fundoCaixa)}
+                      </span>
+                    </div>
+
+                    {totalNextAdvances > 0 && (
+                      <>
+                        <div className="divider" />
+                        <div className="p-4 rounded-xl bg-nd-warning/5 border border-nd-warning/15 space-y-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-nd-warning shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-sm font-semibold text-nd-heading">{t.nextMonthAdvances}</p>
+                              <p className="text-[11px] text-nd-muted mt-0.5">{t.advancesDescription}</p>
+                            </div>
+                          </div>
+                          <div className="space-y-1 pl-6">
+                            {nextMonthAdvances.map(adv => (
+                              <div key={adv.id} className="flex justify-between text-xs">
+                                <span className="text-nd-muted truncate mr-2">{adv.description}</span>
+                                <span className="text-nd-warning font-medium shrink-0">{fmt(adv.total_amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between items-center pt-2 border-t border-nd-warning/15">
+                            <span className="text-sm font-semibold text-nd-warning">{t.totalAdvances}</span>
+                            <span className="text-sm font-bold text-nd-warning">{fmt(totalNextAdvances)}</span>
+                          </div>
+                          <div className="pl-6 space-y-1">
+                            {locale !== 'es-AR' && nextAdvPix > 0 && <MiniRow label={t.pay_pix} value={fmt(nextAdvPix)} />}
+                            {(locale === 'es-AR' ? nextAdvCash + nextAdvPix : nextAdvCash) > 0 && <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? nextAdvCash + nextAdvPix : nextAdvCash)} />}
+                            {nextAdvCard > 0 && <MiniRow label={t.pay_card} value={fmt(nextAdvCard)} />}
+                            {nextAdvTransfer > 0 && <MiniRow label={t.pay_transfer} value={fmt(nextAdvTransfer)} />}
+                          </div>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 space-y-2">
+                          <p className="text-xs font-semibold text-blue-800">{t.bankReconciliation}</p>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-blue-700">{t.monthlyBalance}</span>
+                            <span className="text-blue-800 font-semibold">{fmt(fundoCaixa)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-blue-700">{t.futureAdvancesInAccount}</span>
+                            <span className="text-blue-800 font-semibold">{fmt(totalNextAdvances)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm font-bold border-t border-blue-200 pt-2">
+                            <span className="text-blue-900">{t.realAccountValue}</span>
+                            <span className="text-blue-900">{fmt(fundoCaixa + totalNextAdvances)}</span>
+                          </div>
+                          <p className="text-[10px] text-blue-600 mt-1">{t.reconciliationNote}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )
+      )}
+
+      {/* ── ANNUAL TAB ── */}
+      {tab === 'anual' && (
+        <div className="space-y-4">
+          {annualLoading ? (
+            <div className="card p-10 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-nd-accent" />
+            </div>
+          ) : !annualHasData ? (
+            <div className="card p-10 flex flex-col items-center justify-center text-center min-h-[250px]">
+              <div className="w-16 h-16 rounded-2xl bg-nd-surface flex items-center justify-center mb-5">
+                <CalendarDays className="w-8 h-8 text-nd-muted/30" />
+              </div>
+              <p className="text-sm font-semibold text-nd-text">{t.annualNoData}</p>
+              <p className="text-sm text-nd-muted mt-2">{t.annualNoDataHint}</p>
+            </div>
+          ) : (
+            <>
+              {/* IR note */}
+              <div className="flex items-start gap-2 px-4 py-3 bg-nd-accent/5 border border-nd-accent/15 rounded-xl">
+                <Info className="w-4 h-4 text-nd-accent shrink-0 mt-0.5" />
+                <p className="text-xs text-nd-muted">{t.irNote}</p>
+              </div>
+
+              {/* Summary cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <StatCard
+                  label={t.annualRevenue}
+                  value={fmt(annualTotalRevenue)}
+                  color="text-nd-success"
+                  icon={TrendingUp}
+                  iconBg="bg-nd-success/10"
+                />
+                <StatCard
+                  label={t.annualExpenses}
+                  value={fmt(annualTotalExpenses)}
+                  color="text-nd-danger"
+                  icon={TrendingDown}
+                  iconBg="bg-nd-danger/10"
+                />
+                <StatCard
+                  label={t.annualBalance}
+                  value={fmt(annualTotalBalance)}
+                  color={annualTotalBalance >= 0 ? 'text-nd-accent' : 'text-nd-danger'}
+                  icon={PiggyBank}
+                  iconBg="bg-nd-accent/10"
+                />
+              </div>
+
+              {/* Payment method breakdown */}
+              <div className="card p-5">
+                <h3 className="section-label mb-4">{t.annualRevenueByMethod}</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {[
+                    { icon: Smartphone, label: t.pay_pix, value: annualTotalPix, show: locale !== 'es-AR' },
+                    { icon: Banknote, label: t.pay_cash, value: locale === 'es-AR' ? annualTotalCash + annualTotalPix : annualTotalCash, show: true },
+                    { icon: CreditCard, label: t.pay_card, value: annualTotalCard, show: true },
+                    { icon: ArrowRightLeft, label: t.pay_transfer, value: annualTotalTransfer, show: true },
+                  ].filter(m => m.show).map(method => {
+                    const pct = annualTotalRevenue > 0 ? Math.round((method.value / annualTotalRevenue) * 100) : 0;
+                    return (
+                      <div key={method.label} className="bg-nd-surface rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <method.icon className="w-4 h-4 text-nd-muted" />
+                          <span className="text-xs text-nd-muted font-medium">{method.label}</span>
+                        </div>
+                        <p className="text-base font-bold text-nd-heading">{fmt(method.value)}</p>
+                        <div className="mt-2 h-1 bg-nd-border rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-nd-accent rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-nd-muted mt-1">{pct}% do faturamento</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Monthly breakdown table */}
+              <div className="card overflow-hidden">
+                <div className="px-5 py-3 border-b border-nd-border/50 flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-nd-accent" />
+                  <span className="text-xs font-semibold text-nd-muted uppercase tracking-wide">
+                    {t.monthlyBreakdown}
+                  </span>
+                </div>
+                <div className="divide-y divide-nd-border/50">
+                  {annualData.map((row) => {
+                    const balance = row.revenue - row.expenses;
+                    const barPct = Math.round((row.revenue / annualMaxRevenue) * 100);
+                    const hasActivity = row.revenue > 0 || row.expenses > 0;
+                    return (
+                      <div
+                        key={row.month}
+                        className={`px-5 py-3 transition-colors ${hasActivity ? 'hover:bg-nd-surface/50' : 'opacity-40'}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {/* Month name */}
+                          <span className="text-xs font-semibold text-nd-muted w-8 capitalize shrink-0">
+                            {monthNames[row.month - 1].slice(0, 3)}
+                          </span>
+
+                          {/* Bar */}
+                          <div className="flex-1 h-1.5 bg-nd-surface rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-nd-accent/60 rounded-full transition-all duration-500"
+                              style={{ width: `${barPct}%` }}
+                            />
+                          </div>
+
+                          {/* Values */}
+                          <div className="flex items-center gap-4 shrink-0 text-right">
+                            <div className="hidden sm:block">
+                              <p className="text-[10px] text-nd-muted">Faturamento</p>
+                              <p className="text-xs font-semibold text-nd-success">{fmt(row.revenue)}</p>
+                            </div>
+                            <div className="hidden sm:block">
+                              <p className="text-[10px] text-nd-muted">Despesas</p>
+                              <p className="text-xs font-semibold text-nd-danger">{fmt(row.expenses)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-nd-muted">Resultado</p>
+                              <p className={`text-xs font-bold ${balance >= 0 ? 'text-nd-accent' : 'text-nd-danger'}`}>
+                                {fmt(balance)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Totals row */}
+                  <div className="px-5 py-4 bg-nd-surface/50 flex items-center gap-3">
+                    <span className="text-xs font-bold text-nd-heading w-8 shrink-0">Total</span>
+                    <div className="flex-1" />
+                    <div className="flex items-center gap-4 shrink-0 text-right">
+                      <div className="hidden sm:block">
+                        <p className="text-xs font-bold text-nd-success">{fmt(annualTotalRevenue)}</p>
+                      </div>
+                      <div className="hidden sm:block">
+                        <p className="text-xs font-bold text-nd-danger">{fmt(annualTotalExpenses)}</p>
+                      </div>
+                      <div>
+                        <p className={`text-sm font-bold ${annualTotalBalance >= 0 ? 'text-nd-accent' : 'text-nd-danger'}`}>
+                          {fmt(annualTotalBalance)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </>
           )}
-
-          {/* RECEITAS */}
-          {tab === 'receitas' && (
-            <TxList
-              items={sales}
-              emptyLabel={t.noRevenueRecorded}
-              colorClass="text-nd-success"
-              prefix="+"
-              fmt={fmt}
-              onDelete={handleDelete}
-              getClientName={getClientName}
-              locale={locale}
-            />
-          )}
-
-          {/* DESPESAS */}
-          {tab === 'despesas' && (
-            <TxList
-              items={expenses}
-              emptyLabel={t.noExpenseRecorded}
-              colorClass="text-nd-danger"
-              prefix="-"
-              fmt={fmt}
-              onDelete={handleDelete}
-              getClientName={getClientName}
-              locale={locale}
-            />
-          )}
-
-          {/* FECHAMENTO */}
-          {tab === 'fechamento' && (
-            <div className="space-y-4">
-              <div className="card p-5">
-                <h3 className="text-sm font-semibold text-nd-heading mb-4">{t.closingTitle} — {monthLabel}</h3>
-
-                <div className="space-y-3">
-                  {/* Fundo de caixa inicial */}
-                  <div className="flex items-center justify-between py-2 gap-2">
-                    <span className="text-xs sm:text-sm text-nd-text font-medium">{t.startingCash}</span>
-                    <div className="flex items-center gap-2">
-                      <ClosingValue
-                        value={startingBalance}
-                        onSave={(v) => saveClosing('starting_balance', v)}
-                        fmt={fmt}
-                        editLabel={t.edit}
-                      />
-                      <button
-                        onClick={autoFillStartingBalance}
-                        className="text-[10px] text-nd-accent hover:underline shrink-0"
-                        title={t.autoFillPrevMonth}
-                      >
-                        {t.auto}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="divider" />
-
-                  {/* Faturamento */}
-                  <div className="flex justify-between items-center py-1">
-                    <span className="text-sm text-nd-success font-medium">+ {t.monthlyBilling}</span>
-                    <span className="text-sm font-bold text-nd-success">{fmt(totalRevenue)}</span>
-                  </div>
-                  <div className="pl-4 space-y-1">
-                    {locale !== 'es-AR' && <MiniRow label={t.pay_pix} value={fmt(revenuePix)} />}
-                    <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? revenueCash + revenuePix : revenueCash)} />
-                    <MiniRow label={t.pay_card} value={fmt(revenueCard)} />
-                    <MiniRow label={t.pay_transfer} value={fmt(revenueTransfer)} />
-                  </div>
-
-                  <div className="divider" />
-
-                  {/* Despesas */}
-                  <div className="flex justify-between items-center py-1">
-                    <span className="text-sm text-nd-danger font-medium">- {t.monthlyExpenses}</span>
-                    <span className="text-sm font-bold text-nd-danger">{fmt(totalExpenses)}</span>
-                  </div>
-                  <div className="pl-4 space-y-1">
-                    {locale !== 'es-AR' && <MiniRow label={t.pay_pix} value={fmt(expensePix)} />}
-                    <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? expenseCash + expensePix : expenseCash)} />
-                    <MiniRow label={t.pay_card} value={fmt(expenseCard)} />
-                    <MiniRow label={t.pay_transfer} value={fmt(expenseTransfer)} />
-                  </div>
-
-                  <div className="divider" />
-
-                  {/* Resultado */}
-                  <div className="flex justify-between items-center py-2 bg-nd-surface/50 rounded-xl px-4 -mx-1">
-                    <span className="text-sm font-bold text-nd-heading">= {t.monthlyBalance}</span>
-                    <span className={`text-lg font-bold ${fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'}`}>
-                      {fmt(fundoCaixa)}
-                    </span>
-                  </div>
-
-                  {/* Adiantamentos do próximo mês */}
-                  {totalNextAdvances > 0 && (
-                    <>
-                      <div className="divider" />
-                      <div className="p-4 rounded-xl bg-nd-warning/5 border border-nd-warning/15 space-y-3">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 text-nd-warning shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-sm font-semibold text-nd-heading">{t.nextMonthAdvances}</p>
-                            <p className="text-[11px] text-nd-muted mt-0.5">
-                              {t.advancesDescription}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="space-y-1 pl-6">
-                          {nextMonthAdvances.map(adv => (
-                            <div key={adv.id} className="flex justify-between text-xs">
-                              <span className="text-nd-muted truncate mr-2">{adv.description}</span>
-                              <span className="text-nd-warning font-medium shrink-0">{fmt(adv.total_amount)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="flex justify-between items-center pt-2 border-t border-nd-warning/15">
-                          <span className="text-sm font-semibold text-nd-warning">{t.totalAdvances}</span>
-                          <span className="text-sm font-bold text-nd-warning">{fmt(totalNextAdvances)}</span>
-                        </div>
-                        <div className="pl-6 space-y-1">
-                          {locale !== 'es-AR' && nextAdvPix > 0 && <MiniRow label={t.pay_pix} value={fmt(nextAdvPix)} />}
-                          {(locale === 'es-AR' ? nextAdvCash + nextAdvPix : nextAdvCash) > 0 && <MiniRow label={t.pay_cash} value={fmt(locale === 'es-AR' ? nextAdvCash + nextAdvPix : nextAdvCash)} />}
-                          {nextAdvCard > 0 && <MiniRow label={t.pay_card} value={fmt(nextAdvCard)} />}
-                          {nextAdvTransfer > 0 && <MiniRow label={t.pay_transfer} value={fmt(nextAdvTransfer)} />}
-                        </div>
-                      </div>
-
-                      {/* Reconciliation */}
-                      <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 space-y-2">
-                        <p className="text-xs font-semibold text-blue-800">{t.bankReconciliation}</p>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-blue-700">{t.monthlyBalance}</span>
-                          <span className="text-blue-800 font-semibold">{fmt(fundoCaixa)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-blue-700">{t.futureAdvancesInAccount}</span>
-                          <span className="text-blue-800 font-semibold">{fmt(totalNextAdvances)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm font-bold border-t border-blue-200 pt-2">
-                          <span className="text-blue-900">{t.realAccountValue}</span>
-                          <span className="text-blue-900">{fmt(fundoCaixa + totalNextAdvances)}</span>
-                        </div>
-                        <p className="text-[10px] text-blue-600 mt-1">
-                          {t.reconciliationNote}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </>
+        </div>
       )}
 
       {/* MODAL */}
