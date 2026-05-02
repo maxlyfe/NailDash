@@ -409,6 +409,10 @@ export default function AgendaPage() {
   };
 
   const openEdit = async (appt: ApptRow) => {
+    if (appt.status === 'completed') {
+      await openCloseShift(appt);
+      return;
+    }
     // Load services linked to this appointment
     let svcIds: string[] = [];
     if (salon?.id) {
@@ -657,6 +661,7 @@ export default function AgendaPage() {
     const baseTotal = closeServicesTotal;
     const finalTotal = baseTotal - discount + extras;
     const remaining = finalTotal - advanceAlreadyPaid;
+    const isAlreadyClosed = selected.status === 'completed';
 
     // Update appointment_services with current selection
     await supabase.from('appointment_services').delete().eq('appointment_id', selected.id);
@@ -673,36 +678,82 @@ export default function AgendaPage() {
       await supabase.from('appointment_services').insert(svcRows);
     }
 
-    const { error: err } = await supabase.from('appointments').update({
-      status: 'completed',
+    const apptUpdate: Record<string, unknown> = {
       payment_method: closeForm.payment_method,
       discount,
       extras,
       extras_description: closeForm.extras_description.trim() || null,
       total_amount: finalTotal,
-      closed_at: new Date().toISOString(),
-    }).eq('id', selected.id);
+    };
+    if (!isAlreadyClosed) {
+      apptUpdate.status = 'completed';
+      apptUpdate.closed_at = new Date().toISOString();
+    }
 
+    const { error: err } = await supabase.from('appointments').update(apptUpdate).eq('id', selected.id);
     if (err) { alert(`Erro: ${err.message}`); setSaving(false); return; }
 
-    // Create transaction for the remaining amount (total - advance already paid)
-    await supabase.from('transactions').insert({
-      salon_id: salon.id,
-      type: 'sale',
-      appointment_id: selected.id,
-      client_id: selected.client_id || null,
-      professional_id: selected.professional_id,
-      description: `Turno: ${getApptDisplayName(selected)}`,
-      total_amount: finalTotal,
-      service_price: baseTotal,
-      discount,
-      tax: 0,
-      tips: extras,
-      category: 'turno',
-      [`payment_${closeForm.payment_method}`]: Math.max(remaining, 0),
-      transaction_date: selected.starts_at,
-      registered_at: new Date().toISOString(),
-    });
+    if (isAlreadyClosed) {
+      // Update existing turno transaction so financial reports stay consistent
+      const { data: existingTx } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('appointment_id', selected.id)
+        .eq('category', 'turno')
+        .maybeSingle();
+
+      if (existingTx) {
+        await supabase.from('transactions').update({
+          total_amount: finalTotal,
+          service_price: baseTotal,
+          discount,
+          tips: extras,
+          payment_pix: closeForm.payment_method === 'pix' ? Math.max(remaining, 0) : 0,
+          payment_cash: closeForm.payment_method === 'cash' ? Math.max(remaining, 0) : 0,
+          payment_card: closeForm.payment_method === 'card' ? Math.max(remaining, 0) : 0,
+          payment_transfer: closeForm.payment_method === 'transfer' ? Math.max(remaining, 0) : 0,
+          registered_at: new Date().toISOString(),
+        }).eq('id', existingTx.id);
+      } else {
+        // No turno transaction found — create one
+        await supabase.from('transactions').insert({
+          salon_id: salon.id,
+          type: 'sale',
+          appointment_id: selected.id,
+          client_id: selected.client_id || null,
+          professional_id: selected.professional_id,
+          description: `Turno: ${getApptDisplayName(selected)}`,
+          total_amount: finalTotal,
+          service_price: baseTotal,
+          discount,
+          tax: 0,
+          tips: extras,
+          category: 'turno',
+          [`payment_${closeForm.payment_method}`]: Math.max(remaining, 0),
+          transaction_date: selected.starts_at,
+          registered_at: new Date().toISOString(),
+        });
+      }
+    } else {
+      // First close — insert new turno transaction
+      await supabase.from('transactions').insert({
+        salon_id: salon.id,
+        type: 'sale',
+        appointment_id: selected.id,
+        client_id: selected.client_id || null,
+        professional_id: selected.professional_id,
+        description: `Turno: ${getApptDisplayName(selected)}`,
+        total_amount: finalTotal,
+        service_price: baseTotal,
+        discount,
+        tax: 0,
+        tips: extras,
+        category: 'turno',
+        [`payment_${closeForm.payment_method}`]: Math.max(remaining, 0),
+        transaction_date: selected.starts_at,
+        registered_at: new Date().toISOString(),
+      });
+    }
 
     setModal('closed');
     await fetchAppointments();
@@ -1212,7 +1263,7 @@ export default function AgendaPage() {
                         : 'bg-lime-50 border border-lime-200 rounded-xl cursor-pointer hover:shadow-md'
                     }`}
                     style={{ top: style.top, height: style.height, left: '58px', right: '6px' }}
-                    onClick={(e) => { if (!isCompleted) { e.stopPropagation(); openEdit(appt); } }}
+                    onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
                   >
                     {isCompleted ? (
                       /* ── Closed appointment: premium receipt card ── */
