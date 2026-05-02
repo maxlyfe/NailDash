@@ -210,9 +210,13 @@ export default function FinanceiroPage() {
         map[m] = { month: m, revenue: 0, expenses: 0, pix: 0, cash: 0, card: 0, transfer: 0 };
       }
 
+      // Use UTC month to match server-side UTC date filtering — avoids grouping
+      // late-evening transactions (UTC-3) into the wrong month.
+      const utcMonth = (iso: string) => new Date(iso).getUTCMonth() + 1;
+
       // Transactions
       for (const tx of (txRes.data || []) as any[]) {
-        const m = new Date(tx.transaction_date).getMonth() + 1;
+        const m = utcMonth(tx.transaction_date);
         if (tx.type === 'sale' && tx.category === 'turno') {
           map[m].revenue += tx.total_amount || 0;
           map[m].pix += tx.payment_pix || 0;
@@ -228,7 +232,7 @@ export default function FinanceiroPage() {
       // (advance is included in the total). Here we only complement the payment method
       // breakdown, since the turno payment_* fields capture only the remaining amount.
       for (const appt of (apptRes.data || []) as any[]) {
-        const m = new Date(appt.starts_at).getMonth() + 1;
+        const m = utcMonth(appt.starts_at);
         const amt = appt.advance_amount || 0;
         // Do NOT add to revenue — already counted in turno total_amount
         if (appt.advance_payment_method === 'pix') map[m].pix += amt;
