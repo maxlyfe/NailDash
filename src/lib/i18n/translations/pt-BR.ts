@@ -221,6 +221,15 @@ const ptBR = {
   categoryPlaceholder: 'Ex: Material, Aluguel, Salário...',
   error: 'Erro',
 
+  // ── Block ──
+  blockTime: 'Bloquear Horário',
+  blockTitle: 'Motivo do bloqueio',
+  blockTitlePlaceholder: 'Ex: Almoço, Consulta médica, Pausa...',
+  blockDetail: 'Horário Bloqueado',
+  deleteBlock: 'Remover bloqueio',
+  blockSaved: 'Horário bloqueado!',
+  allProfessionals: 'Todos os profissionais',
+
   // ── Payment methods ──
   pay_pix: 'PIX',
   pay_cash: 'Dinheiro',

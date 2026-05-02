@@ -84,7 +84,7 @@ export type Service = {
 
 export type AppointmentStatus =
   | 'scheduled' | 'confirmed' | 'in_progress'
-  | 'completed' | 'cancelled' | 'no_show';
+  | 'completed' | 'cancelled' | 'no_show' | 'blocked';
 
 export type Appointment = {
   id: string;

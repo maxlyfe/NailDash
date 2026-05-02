@@ -8,7 +8,7 @@ import {
   CalendarDays, Plus, X, Loader2, Save, Trash2,
   ChevronLeft, ChevronRight, User, Clock, Search,
   DollarSign, CreditCard, Banknote, ArrowDownLeft,
-  Check, Pencil, ClipboardCopy,
+  Check, Pencil, ClipboardCopy, Lock,
 } from 'lucide-react';
 
 /* ─── Types ─── */
@@ -16,7 +16,7 @@ type PickClient = { id: string; name: string };
 type PickProf = { id: string; name: string };
 type PickService = { id: string; name: string; duration_minutes: number; price: number };
 type ViewMode = 'week' | 'day' | 'month';
-type ModalMode = 'closed' | 'create' | 'edit' | 'confirm_advance' | 'close_shift';
+type ModalMode = 'closed' | 'create' | 'edit' | 'confirm_advance' | 'close_shift' | 'block' | 'block_detail';
 type DayHours = { open: string; close: string } | null;
 type BusinessHours = Record<string, DayHours>;
 
@@ -179,6 +179,16 @@ export default function AgendaPage() {
     extras: '0',
     extras_description: '',
     service_ids: [] as string[],
+  });
+
+  // Block form
+  const [blockForm, setBlockForm] = useState({
+    title: '',
+    professional_id: '',
+    all_professionals: false,
+    date: '',
+    starts_at: '12:00',
+    ends_at: '13:00',
   });
 
   // Client search
@@ -418,6 +428,11 @@ export default function AgendaPage() {
   };
 
   const openEdit = async (appt: ApptRow) => {
+    if (appt.status === 'blocked') {
+      setSelected(appt);
+      setModal('block_detail');
+      return;
+    }
     // Load services linked to this appointment
     let svcIds: string[] = [];
     if (salon?.id) {
@@ -765,6 +780,51 @@ export default function AgendaPage() {
     setSaving(false);
   };
 
+  const openCreateBlock = () => {
+    const d = currentDate;
+    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setBlockForm({
+      title: '',
+      professional_id: professionals[0]?.id || '',
+      all_professionals: professionals.length > 1 ? false : false,
+      date: ds,
+      starts_at: '12:00',
+      ends_at: '13:00',
+    });
+    setModal('block');
+  };
+
+  const handleSaveBlock = async () => {
+    if (!salon?.id || !blockForm.title.trim()) return;
+    setSaving(true);
+    const profIds = blockForm.all_professionals
+      ? professionals.map(p => p.id)
+      : [blockForm.professional_id].filter(Boolean);
+    for (const pid of profIds) {
+      const startsAt = new Date(`${blockForm.date}T${blockForm.starts_at}`).toISOString();
+      const endsAt = new Date(`${blockForm.date}T${blockForm.ends_at}`).toISOString();
+      await supabase.from('appointments').insert({
+        salon_id: salon.id,
+        professional_id: pid,
+        client_name: blockForm.title.trim(),
+        client_id: null,
+        status: 'blocked',
+        starts_at: startsAt,
+        ends_at: endsAt,
+        notes: null,
+        payment_method: null,
+        discount: 0,
+        extras: 0,
+        advance_amount: 0,
+        total_amount: 0,
+        created_by: user?.id || null,
+      });
+    }
+    setModal('closed');
+    await fetchAppointments();
+    setSaving(false);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm(t.deleteAppointmentConfirm)) return;
     await supabase.from('appointment_services').delete().eq('appointment_id', id);
@@ -1035,10 +1095,16 @@ export default function AgendaPage() {
         <div className="min-w-0">
           <h1 className="page-title">{t.agenda}</h1>
         </div>
-        <button onClick={() => openCreateAt(currentDate, new Date().getHours())} className="btn-primary text-sm shrink-0">
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">{t.add}</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={openCreateBlock} className="btn-ghost text-sm border border-nd-border/50 hover:border-nd-muted/50">
+            <Lock className="w-4 h-4 text-nd-muted" />
+            <span className="hidden sm:inline text-nd-muted">{t.blockTime}</span>
+          </button>
+          <button onClick={() => openCreateAt(currentDate, new Date().getHours())} className="btn-primary text-sm">
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">{t.add}</span>
+          </button>
+        </div>
       </div>
 
       {/* Nav bar */}
@@ -1143,6 +1209,7 @@ export default function AgendaPage() {
                 return dayAppts.map(appt => {
                   const style = getApptStyle(appt);
                   const isCompleted = appt.status === 'completed';
+                  const isBlocked = appt.status === 'blocked';
                   const svcName = apptServiceNames[appt.id];
                   const pmIcon = isCompleted ? PAYMENT_METHODS.find(p => p.value === appt.payment_method) : null;
                   const PmIcon = pmIcon?.icon;
@@ -1151,7 +1218,9 @@ export default function AgendaPage() {
                       key={appt.id}
                       onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
                       className={`absolute overflow-hidden cursor-pointer z-10 transition-all duration-150 ${
-                        isCompleted
+                        isBlocked
+                          ? 'bg-gray-100 border border-gray-300 border-l-[3px] border-l-gray-500 rounded-lg hover:shadow-soft'
+                          : isCompleted
                           ? 'bg-white border border-nd-success/20 border-l-[3px] border-l-nd-success rounded-lg shadow-[0_1px_6px_rgba(0,0,0,0.06)] hover:shadow-[0_2px_10px_rgba(0,0,0,0.1)]'
                           : appt.status === 'scheduled'
                           ? 'bg-nd-accent/12 border border-nd-accent/25 rounded-lg hover:shadow-soft'
@@ -1164,7 +1233,14 @@ export default function AgendaPage() {
                         width: `calc((100% - 48px) / ${visibleColCount} - 4px)`,
                       }}
                     >
-                      {isCompleted ? (
+                      {isBlocked ? (
+                        <div className="px-1.5 py-1 h-full flex flex-col justify-center items-center gap-0.5">
+                          <Lock className="w-3 h-3 text-gray-500 shrink-0" />
+                          <p className="text-[9px] font-semibold text-gray-600 truncate text-center leading-tight w-full">
+                            {appt.client_name}
+                          </p>
+                        </div>
+                      ) : isCompleted ? (
                         <div className="px-1.5 py-1 h-full flex flex-col">
                           <div className="flex items-start justify-between gap-0.5">
                             <p className="text-[10px] font-bold text-nd-heading truncate leading-tight flex-1">
@@ -1293,6 +1369,7 @@ export default function AgendaPage() {
               {getApptForDay(currentDate).map(appt => {
                 const style = getApptStyle(appt);
                 const isCompleted = appt.status === 'completed';
+                const isBlocked = appt.status === 'blocked';
                 const svcName = apptServiceNames[appt.id];
                 const dur = formatDuration(appt.starts_at, appt.ends_at);
                 const pmData = isCompleted ? PAYMENT_METHODS.find(p => p.value === appt.payment_method) : null;
@@ -1301,7 +1378,9 @@ export default function AgendaPage() {
                   <div
                     key={appt.id}
                     className={`absolute z-10 overflow-hidden transition-all duration-150 ${
-                      isCompleted
+                      isBlocked
+                        ? 'bg-gray-100 border border-gray-300 border-l-[4px] border-l-gray-500 rounded-xl cursor-pointer hover:shadow-md'
+                        : isCompleted
                         ? 'bg-white border border-nd-success/20 border-l-[4px] border-l-nd-success rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.07)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.11)]'
                         : appt.status === 'scheduled'
                         ? 'bg-nd-accent/12 border border-nd-accent/25 rounded-xl cursor-pointer hover:shadow-md'
@@ -1310,7 +1389,23 @@ export default function AgendaPage() {
                     style={{ top: style.top, height: style.height, left: '58px', right: '6px' }}
                     onClick={(e) => { e.stopPropagation(); openEdit(appt); }}
                   >
-                    {isCompleted ? (
+                    {isBlocked ? (
+                      /* ── Blocked time card ── */
+                      <div className="h-full flex flex-col items-center justify-center gap-1.5 px-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                            <Lock className="w-3.5 h-3.5 text-gray-500" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-gray-700 truncate leading-tight">{appt.client_name}</p>
+                            <p className="text-[10px] text-gray-500">{formatTime(appt.starts_at)} – {formatTime(appt.ends_at)} · {dur}</p>
+                          </div>
+                        </div>
+                        {profMap[appt.professional_id] && (
+                          <p className="text-[10px] text-gray-400">{profMap[appt.professional_id]}</p>
+                        )}
+                      </div>
+                    ) : isCompleted ? (
                       /* ── Closed appointment: premium receipt card ── */
                       <div className="h-full flex flex-col">
                         {/* Header */}
@@ -2175,6 +2270,159 @@ export default function AgendaPage() {
                   {t.closeShift}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ════ BLOCK CREATION MODAL ════ */}
+      {modal === 'block' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setModal('closed')} />
+          <div className="relative bg-nd-card rounded-2xl border border-nd-border shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-nd-border/30">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center">
+                  <Lock className="w-4 h-4 text-gray-500" />
+                </div>
+                <h2 className="text-base font-semibold text-nd-heading">{t.blockTime}</h2>
+              </div>
+              <button onClick={() => setModal('closed')} className="p-1.5 rounded-xl hover:bg-nd-surface transition-colors">
+                <X className="w-4 h-4 text-nd-muted" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Title */}
+              <div>
+                <label className="text-xs font-medium text-nd-muted mb-1.5 block">{t.blockTitle}</label>
+                <input
+                  type="text"
+                  value={blockForm.title}
+                  onChange={e => setBlockForm(f => ({ ...f, title: e.target.value }))}
+                  placeholder={t.blockTitlePlaceholder}
+                  autoFocus
+                  className="input-field w-full text-sm"
+                />
+                {/* Quick presets */}
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  {['Almoço', 'Pausa', 'Consulta', 'Reunião'].map(preset => (
+                    <button key={preset} onClick={() => setBlockForm(f => ({ ...f, title: preset }))}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-nd-surface hover:bg-gray-200 text-nd-muted transition-colors border border-nd-border/40">
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Professional */}
+              {professionals.length > 1 && (
+                <div>
+                  <label className="text-xs font-medium text-nd-muted mb-1.5 block">{t.professional}</label>
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={blockForm.all_professionals}
+                        onChange={e => setBlockForm(f => ({ ...f, all_professionals: e.target.checked }))}
+                        className="w-4 h-4 rounded border-nd-border text-nd-accent" />
+                      <span className="text-sm text-nd-text">{t.allProfessionals}</span>
+                    </label>
+                    {!blockForm.all_professionals && (
+                      <select value={blockForm.professional_id}
+                        onChange={e => setBlockForm(f => ({ ...f, professional_id: e.target.value }))}
+                        className="input-field text-sm w-full">
+                        {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Date & time */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-3">
+                  <label className="text-xs font-medium text-nd-muted mb-1.5 block">{t.date}</label>
+                  <input type="date" value={blockForm.date}
+                    onChange={e => setBlockForm(f => ({ ...f, date: e.target.value }))}
+                    className="input-field text-sm w-full" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-nd-muted mb-1.5 block">{t.startTime}</label>
+                  <input type="time" value={blockForm.starts_at}
+                    onChange={e => setBlockForm(f => ({ ...f, starts_at: e.target.value }))}
+                    className="input-field text-sm w-full" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-nd-muted mb-1.5 block">{t.endTime}</label>
+                  <input type="time" value={blockForm.ends_at}
+                    onChange={e => setBlockForm(f => ({ ...f, ends_at: e.target.value }))}
+                    className="input-field text-sm w-full" />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-4 border-t border-nd-border/30 flex gap-2.5">
+              <button onClick={() => setModal('closed')} className="btn-ghost text-sm flex-1">{t.cancel}</button>
+              <button
+                onClick={handleSaveBlock}
+                disabled={saving || !blockForm.title.trim() || !blockForm.date}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gray-600 text-white text-sm font-semibold hover:bg-gray-700 disabled:opacity-50 transition-colors">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                {t.blockTime}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════ BLOCK DETAIL MODAL ════ */}
+      {modal === 'block_detail' && selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setModal('closed')} />
+          <div className="relative bg-nd-card rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm overflow-hidden">
+            {/* Header */}
+            <div className="bg-gray-100 px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                  <Lock className="w-4.5 h-4.5 text-gray-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-800 text-base leading-tight">{selected.client_name}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{t.blockDetail}</p>
+                </div>
+              </div>
+              <button onClick={() => setModal('closed')} className="w-8 h-8 rounded-xl bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors">
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-nd-surface rounded-xl p-3 text-center">
+                  <p className="text-[9px] uppercase tracking-wider text-nd-muted font-semibold mb-1">{t.date}</p>
+                  <p className="text-xs font-bold text-nd-heading">{formatDate(selected.starts_at)}</p>
+                </div>
+                <div className="bg-nd-surface rounded-xl p-3 text-center">
+                  <p className="text-[9px] uppercase tracking-wider text-nd-muted font-semibold mb-1">{t.startTime}</p>
+                  <p className="text-sm font-bold text-nd-heading">{formatTime(selected.starts_at)}</p>
+                </div>
+                <div className="bg-nd-surface rounded-xl p-3 text-center">
+                  <p className="text-[9px] uppercase tracking-wider text-nd-muted font-semibold mb-1">{t.endTime}</p>
+                  <p className="text-sm font-bold text-nd-heading">{formatTime(selected.ends_at)}</p>
+                </div>
+              </div>
+              {profMap[selected.professional_id] && (
+                <p className="text-sm text-nd-muted px-1">{t.professional}: <span className="font-medium text-nd-text">{profMap[selected.professional_id]}</span></p>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-nd-border/20 flex items-center gap-2.5">
+              <button onClick={() => handleDelete(selected.id)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-nd-danger hover:bg-nd-danger/10 transition-colors text-sm font-medium">
+                <Trash2 className="w-4 h-4" /> {t.deleteBlock}
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setModal('closed')} className="btn-ghost text-sm px-4 py-2">{t.close}</button>
             </div>
           </div>
         </div>

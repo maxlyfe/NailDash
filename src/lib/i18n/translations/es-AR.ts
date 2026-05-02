@@ -223,6 +223,15 @@ const esAR: Translations = {
   categoryPlaceholder: 'Ej: Material, Alquiler, Sueldo...',
   error: 'Error',
 
+  // ── Block ──
+  blockTime: 'Bloquear Horario',
+  blockTitle: 'Motivo del bloqueo',
+  blockTitlePlaceholder: 'Ej: Almuerzo, Consulta médica, Pausa...',
+  blockDetail: 'Horario Bloqueado',
+  deleteBlock: 'Eliminar bloqueo',
+  blockSaved: '¡Horario bloqueado!',
+  allProfessionals: 'Todos los profesionales',
+
   // ── Payment methods ──
   pay_pix: 'Efectivo',       // Argentina no tiene PIX — mapeamos a Efectivo (DB: pix → Efectivo)
   pay_cash: 'Efectivo',
