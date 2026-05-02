@@ -224,11 +224,13 @@ export default function FinanceiroPage() {
         }
       }
 
-      // Closed advances (completed appointments in year)
+      // Closed advances: the turno transaction already holds the full service total_amount
+      // (advance is included in the total). Here we only complement the payment method
+      // breakdown, since the turno payment_* fields capture only the remaining amount.
       for (const appt of (apptRes.data || []) as any[]) {
         const m = new Date(appt.starts_at).getMonth() + 1;
         const amt = appt.advance_amount || 0;
-        map[m].revenue += amt;
+        // Do NOT add to revenue — already counted in turno total_amount
         if (appt.advance_payment_method === 'pix') map[m].pix += amt;
         else if (appt.advance_payment_method === 'cash') map[m].cash += amt;
         else if (appt.advance_payment_method === 'card') map[m].card += amt;
