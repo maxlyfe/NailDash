@@ -156,6 +156,16 @@ const ptBR = {
   isAddon: 'Adicional',
   isActive: 'Ativo',
   deleteServiceConfirm: 'Excluir este serviço?',
+  catalog: 'Catálogo',
+  ranking: 'Ranking',
+  serviceRanking: 'Ranking de Serviços',
+  rankingSubtitle: 'Serviços mais solicitados no período',
+  viewByMonth: 'Mês',
+  viewByYear: 'Ano',
+  requests: 'solicitações',
+  noRankingData: 'Sem dados para este período',
+  noRankingDataHint: 'Ainda não há turnos registrados neste período.',
+  rankingRevenue: 'Receita',
 
   // ── Professionals ──
   salonProfessionals: 'Profissionais do salão',

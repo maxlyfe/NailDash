@@ -158,6 +158,16 @@ const esAR: Translations = {
   isAddon: 'Adicional',
   isActive: 'Activo',
   deleteServiceConfirm: '¿Eliminar este servicio?',
+  catalog: 'Catálogo',
+  ranking: 'Ranking',
+  serviceRanking: 'Ranking de Servicios',
+  rankingSubtitle: 'Servicios más solicitados en el período',
+  viewByMonth: 'Mes',
+  viewByYear: 'Año',
+  requests: 'solicitudes',
+  noRankingData: 'Sin datos para este período',
+  noRankingDataHint: 'Aún no hay turnos registrados en este período.',
+  rankingRevenue: 'Ingresos',
 
   // ── Professionals ──
   salonProfessionals: 'Profesionales del salón',
