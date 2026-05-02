@@ -8,7 +8,7 @@ import {
   CalendarDays, Plus, X, Loader2, Save, Trash2,
   ChevronLeft, ChevronRight, User, Clock, Search,
   DollarSign, CreditCard, Banknote, ArrowDownLeft,
-  Check,
+  Check, Pencil,
 } from 'lucide-react';
 
 /* ─── Types ─── */
@@ -409,10 +409,6 @@ export default function AgendaPage() {
   };
 
   const openEdit = async (appt: ApptRow) => {
-    if (appt.status === 'completed') {
-      await openCloseShift(appt);
-      return;
-    }
     // Load services linked to this appointment
     let svcIds: string[] = [];
     if (salon?.id) {
@@ -1522,14 +1518,10 @@ export default function AgendaPage() {
                   </div>
                 </div>
 
-                {/* Profissional — editável */}
+                {/* Profissional */}
                 <div>
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.professional}</p>
-                  <select value={form.professional_id}
-                    onChange={e => setForm(f => ({ ...f, professional_id: e.target.value }))}
-                    className="input-field !bg-nd-surface/50 text-sm w-full">
-                    {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  <p className="text-sm font-medium text-nd-heading px-1">{profName}</p>
                 </div>
 
                 {/* Serviços realizados */}
@@ -1588,14 +1580,13 @@ export default function AgendaPage() {
                   )}
                 </div>
 
-                {/* Observações — editável */}
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.notes}</p>
-                  <input type="text" value={form.notes}
-                    onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                    placeholder={t.notes + '...'}
-                    className="input-field !bg-nd-surface/50 text-sm w-full" />
-                </div>
+                {/* Observações */}
+                {selected.notes && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.notes}</p>
+                    <p className="text-sm text-nd-heading px-1">{selected.notes}</p>
+                  </div>
+                )}
 
               </div>
 
@@ -1610,11 +1601,10 @@ export default function AgendaPage() {
                 <div className="flex-1" />
                 <button onClick={() => setModal('closed')} className="btn-ghost text-sm px-4 py-2">{t.cancel}</button>
                 <button
-                  onClick={handleSave}
-                  disabled={saving || !form.professional_id}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-nd-success text-white text-sm font-semibold hover:bg-nd-success/90 disabled:opacity-50 transition-colors shadow-sm">
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Salvar
+                  onClick={() => openCloseShift(selected)}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-nd-accent text-white text-sm font-semibold hover:bg-nd-accent/90 transition-colors shadow-sm">
+                  <Pencil className="w-4 h-4" />
+                  Editar
                 </button>
               </div>
             </div>
