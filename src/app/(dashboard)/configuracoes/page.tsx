@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import { useT, localeOptions } from '@/contexts/LanguageContext';
-import { Settings, Save, Loader2, Clock, Globe } from 'lucide-react';
+import { Settings, Save, Loader2, Clock, Globe, MessageSquare, Tag } from 'lucide-react';
 
 type DayHours = { open: string; close: string } | null;
 type BusinessHours = Record<string, DayHours>;
@@ -19,6 +19,15 @@ const DEFAULT_HOURS: BusinessHours = {
   '6': { open: '09:00', close: '13:00' },
 };
 
+const TEMPLATE_TAGS = [
+  { key: '{nome}',     label: 'Nome cliente' },
+  { key: '{servicos}', label: 'Serviços' },
+  { key: '{data}',     label: 'Data' },
+  { key: '{hora}',     label: 'Hora' },
+  { key: '{total}',    label: 'Total' },
+  { key: '{sinal}',    label: 'Sinal' },
+];
+
 export default function ConfiguracoesPage() {
   const { salon } = useAuth();
   const supabase = useSupabase();
@@ -27,23 +36,24 @@ export default function ConfiguracoesPage() {
   const DAY_NAMES = [t.day_sunday, t.day_monday, t.day_tuesday, t.day_wednesday, t.day_thursday, t.day_friday, t.day_saturday];
 
   const [hours, setHours] = useState<BusinessHours>(DEFAULT_HOURS);
+  const [messageTemplate, setMessageTemplate] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savingMsg, setSavingMsg] = useState(false);
+  const [savedMsg, setSavedMsg] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!salon?.id) return;
-    if (salon.business_hours) {
-      setHours(salon.business_hours as BusinessHours);
-    }
+    if (salon.business_hours) setHours(salon.business_hours as BusinessHours);
+    if (salon.message_template) setMessageTemplate(salon.message_template);
     setLoading(false);
   }, [salon?.id]);
 
   const toggleDay = (day: string) => {
-    setHours(h => ({
-      ...h,
-      [day]: h[day] ? null : { open: '09:00', close: '18:00' },
-    }));
+    setHours(h => ({ ...h, [day]: h[day] ? null : { open: '09:00', close: '18:00' } }));
   };
 
   const updateHour = (day: string, field: 'open' | 'close', value: string) => {
@@ -53,15 +63,39 @@ export default function ConfiguracoesPage() {
     }));
   };
 
-  const handleSave = async () => {
+  const insertTag = (tag: string) => {
+    const el = textareaRef.current;
+    if (!el) {
+      setMessageTemplate(v => v + tag);
+      return;
+    }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const next = messageTemplate.slice(0, start) + tag + messageTemplate.slice(end);
+    setMessageTemplate(next);
+    setTimeout(() => {
+      el.focus();
+      el.setSelectionRange(start + tag.length, start + tag.length);
+    }, 0);
+  };
+
+  const handleSaveHours = async () => {
     if (!salon) return;
     setSaving(true);
     await supabase.from('salons').update({ business_hours: hours }).eq('id', salon.id);
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-    // Reload to update AuthContext
     window.location.reload();
+  };
+
+  const handleSaveMessage = async () => {
+    if (!salon) return;
+    setSavingMsg(true);
+    await supabase.from('salons').update({ message_template: messageTemplate.trim() || null }).eq('id', salon.id);
+    setSavingMsg(false);
+    setSavedMsg(true);
+    setTimeout(() => setSavedMsg(false), 2000);
   };
 
   if (loading) {
@@ -99,6 +133,7 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
+      {/* Business Hours */}
       <div className="card">
         <div className="flex items-center gap-2.5 px-5 py-4 border-b border-nd-border/50">
           <Clock className="w-4 h-4 text-nd-accent" />
@@ -148,11 +183,62 @@ export default function ConfiguracoesPage() {
         </div>
 
         <div className="px-5 py-4 border-t border-nd-border/50 flex items-center gap-3">
-          <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
+          <button onClick={handleSaveHours} disabled={saving} className="btn-primary text-sm">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {t.save}
           </button>
           {saved && <span className="text-xs text-nd-success font-medium">{t.savedSuccess}</span>}
+        </div>
+      </div>
+
+      {/* Message Template */}
+      <div className="card">
+        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-nd-border/50">
+          <MessageSquare className="w-4 h-4 text-nd-accent" />
+          <div>
+            <h2 className="text-sm font-semibold text-nd-heading">{t.messageTemplate}</h2>
+            <p className="text-[11px] text-nd-muted mt-0.5">{t.messageTemplateSubtitle}</p>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Tag chips */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <Tag className="w-3.5 h-3.5 text-nd-muted" />
+              <span className="text-[11px] font-semibold text-nd-muted uppercase tracking-wider">{t.messageTags}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {TEMPLATE_TAGS.map(tag => (
+                <button
+                  key={tag.key}
+                  onClick={() => insertTag(tag.key)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-nd-accent/10 hover:bg-nd-accent/20 text-nd-accent text-xs font-medium transition-colors border border-nd-accent/20"
+                >
+                  <span className="font-mono text-[10px] bg-nd-accent/15 px-1 rounded">{tag.key}</span>
+                  {tag.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            value={messageTemplate}
+            onChange={e => setMessageTemplate(e.target.value)}
+            placeholder={t.messageTemplatePlaceholder}
+            rows={7}
+            className="input-field w-full resize-none font-[inherit] leading-relaxed text-sm"
+          />
+        </div>
+
+        <div className="px-5 py-4 border-t border-nd-border/50 flex items-center gap-3">
+          <button onClick={handleSaveMessage} disabled={savingMsg} className="btn-primary text-sm">
+            {savingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {t.save}
+          </button>
+          {savedMsg && <span className="text-xs text-nd-success font-medium">{t.savedSuccess}</span>}
         </div>
       </div>
     </div>

@@ -8,7 +8,7 @@ import {
   CalendarDays, Plus, X, Loader2, Save, Trash2,
   ChevronLeft, ChevronRight, User, Clock, Search,
   DollarSign, CreditCard, Banknote, ArrowDownLeft,
-  Check, Pencil,
+  Check, Pencil, ClipboardCopy,
 } from 'lucide-react';
 
 /* ─── Types ─── */
@@ -149,6 +149,7 @@ export default function AgendaPage() {
   const [modal, setModal] = useState<ModalMode>('closed');
   const [selected, setSelected] = useState<ApptRow | null>(null);
   const [saving, setSaving] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Form state
   const [form, setForm] = useState({
@@ -875,6 +876,36 @@ export default function AgendaPage() {
 
   const formatCurrency = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: t.currency });
   const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  const formatDate = (iso: string) => new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const copyMessage = async (appt: ApptRow) => {
+    const template = salon?.message_template;
+    if (!template) return;
+    const clientName = appt.client_id ? (clientMap[appt.client_id] || appt.client_name || '') : (appt.client_name || '');
+    const svcName = apptServiceNames[appt.id] || '';
+    const msg = template
+      .replace(/{nome}/g, clientName)
+      .replace(/{servicos}/g, svcName)
+      .replace(/{data}/g, formatDate(appt.starts_at))
+      .replace(/{hora}/g, formatTime(appt.starts_at))
+      .replace(/{total}/g, formatCurrency(appt.total_amount || 0))
+      .replace(/{sinal}/g, appt.advance_amount > 0 ? formatCurrency(appt.advance_amount) : '–');
+    try {
+      await navigator.clipboard.writeText(msg);
+      setCopiedId(appt.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // fallback for browsers that block clipboard
+      const ta = document.createElement('textarea');
+      ta.value = msg;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedId(appt.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
+  };
 
   const isCurrentWeek = isSameDay(weekDays[0], getWeekDays(new Date())[0]);
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => i);
@@ -1149,9 +1180,19 @@ export default function AgendaPage() {
                             {getApptDisplayName(appt)}
                           </p>
                           {svcName && <p className="text-[8px] text-nd-muted truncate">{svcName}</p>}
-                          <p className={`text-[8px] truncate mt-auto ${appt.status === 'scheduled' ? 'text-nd-accent' : 'text-lime-600'}`}>
-                            {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
-                          </p>
+                          <div className="flex items-center gap-1 mt-auto">
+                            <p className={`text-[8px] truncate ${appt.status === 'scheduled' ? 'text-nd-accent' : 'text-lime-600'}`}>
+                              {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
+                            </p>
+                            {salon?.message_template && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); copyMessage(appt); }}
+                                className={`ml-auto shrink-0 transition-colors ${copiedId === appt.id ? 'text-nd-success' : 'text-nd-muted/50 hover:text-nd-accent'}`}
+                              >
+                                <ClipboardCopy className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1350,9 +1391,19 @@ export default function AgendaPage() {
                           <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-medium ${appt.status === 'scheduled' ? 'bg-nd-accent/20 text-nd-accent' : 'bg-lime-200/70 text-lime-700'}`}>{dur}</span>
                         </div>
                         {appt.status !== 'cancelled' && (
-                          <div className="flex gap-2 mt-1">
+                          <div className="flex items-center gap-2 mt-1">
                             {appt.advance_amount > 0 && (
                               <span className="text-[9px] text-nd-accent">{t.deposit}: {formatCurrency(appt.advance_amount)}</span>
+                            )}
+                            {salon?.message_template && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); copyMessage(appt); }}
+                                title={t.copyMessage}
+                                className={`flex items-center gap-1 text-[9px] font-medium transition-colors ${copiedId === appt.id ? 'text-nd-success' : 'text-nd-muted hover:text-nd-accent'}`}
+                              >
+                                <ClipboardCopy className="w-3 h-3" />
+                                {copiedId === appt.id ? t.messageCopied : t.copyMessage}
+                              </button>
                             )}
                             <button onClick={(e) => { e.stopPropagation(); openCloseShift(appt); }}
                               className="text-[10px] font-medium text-nd-success hover:underline ml-auto">{t.closeShift}</button>

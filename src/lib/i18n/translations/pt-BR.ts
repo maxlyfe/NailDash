@@ -232,6 +232,13 @@ const ptBR = {
   businessHours: 'Horário de Funcionamento',
   language: 'Idioma',
   languageLabel: 'Idioma do sistema',
+  messageTemplate: 'Mensagem Padrão',
+  messageTemplateSubtitle: 'Escreva o modelo de mensagem e insira as tags onde quiser',
+  messageTags: 'Tags disponíveis',
+  copyMessage: 'Copiar mensagem',
+  messageCopied: 'Copiado!',
+  noMessageTemplate: 'Nenhuma mensagem padrão configurada',
+  messageTemplatePlaceholder: 'Ex: Olá {nome}! Seu agendamento está confirmado para {data} às {hora}.\nServiços: {servicos}\nTotal: {total}\nSinal: {sinal}\n\nTe esperamos! 💅',
 
   // ── Days of week ──
   day_sunday: 'Domingo',

@@ -234,6 +234,13 @@ const esAR: Translations = {
   businessHours: 'Horario de Atención',
   language: 'Idioma',
   languageLabel: 'Idioma del sistema',
+  messageTemplate: 'Mensaje Predeterminado',
+  messageTemplateSubtitle: 'Escribí la plantilla e insertá las etiquetas donde quieras',
+  messageTags: 'Etiquetas disponibles',
+  copyMessage: 'Copiar mensaje',
+  messageCopied: '¡Copiado!',
+  noMessageTemplate: 'Ninguna plantilla configurada',
+  messageTemplatePlaceholder: 'Ej: ¡Hola {nome}! Tu turno está confirmado para {data} a las {hora}.\nServicios: {servicos}\nTotal: {total}\nSeña: {sinal}\n\n¡Te esperamos! 💅',
 
   // ── Days of week ──
   day_sunday: 'Domingo',
