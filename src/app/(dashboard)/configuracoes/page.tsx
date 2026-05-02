@@ -48,7 +48,9 @@ export default function ConfiguracoesPage() {
   useEffect(() => {
     if (!salon?.id) return;
     if (salon.business_hours) setHours(salon.business_hours as BusinessHours);
-    if (salon.message_template) setMessageTemplate(salon.message_template);
+    // Fetch message_template directly (column may not exist yet if migration pending)
+    supabase.from('salons').select('message_template').eq('id', salon.id).single()
+      .then(({ data }: { data: { message_template: string | null } | null }) => { if (data?.message_template) setMessageTemplate(data.message_template); });
     setLoading(false);
   }, [salon?.id]);
 

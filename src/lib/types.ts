@@ -16,7 +16,7 @@ export type Salon = {
   timezone: string;
   currency: string;
   business_hours: BusinessHours | null;
-  message_template: string | null;
+  message_template?: string | null;
   created_at: string;
   updated_at: string;
 };

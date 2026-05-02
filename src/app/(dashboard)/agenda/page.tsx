@@ -150,6 +150,7 @@ export default function AgendaPage() {
   const [selected, setSelected] = useState<ApptRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [messageTemplate, setMessageTemplate] = useState<string | null>(null);
 
   // Form state
   const [form, setForm] = useState({
@@ -227,6 +228,13 @@ export default function AgendaPage() {
   }, [isMobile, viewMode, filteredWeekDays, weekPage]);
 
   const visibleColCount = visibleDays.length;
+
+  // Fetch message template
+  useEffect(() => {
+    if (!salon?.id) return;
+    supabase.from('salons').select('message_template').eq('id', salon.id).single()
+      .then(({ data }: { data: { message_template: string | null } | null }) => { if (data?.message_template) setMessageTemplate(data.message_template); });
+  }, [salon?.id]);
 
   // Load dropdown data
   useEffect(() => {
@@ -879,7 +887,7 @@ export default function AgendaPage() {
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const copyMessage = async (appt: ApptRow) => {
-    const template = salon?.message_template;
+    const template = messageTemplate;
     if (!template) return;
     const clientName = appt.client_id ? (clientMap[appt.client_id] || appt.client_name || '') : (appt.client_name || '');
     const svcName = apptServiceNames[appt.id] || '';
@@ -1184,7 +1192,7 @@ export default function AgendaPage() {
                             <p className={`text-[8px] truncate ${appt.status === 'scheduled' ? 'text-nd-accent' : 'text-lime-600'}`}>
                               {formatTime(appt.starts_at)}-{formatTime(appt.ends_at)}
                             </p>
-                            {salon?.message_template && (
+                            {messageTemplate && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); copyMessage(appt); }}
                                 className={`ml-auto shrink-0 transition-colors ${copiedId === appt.id ? 'text-nd-success' : 'text-nd-muted/50 hover:text-nd-accent'}`}
@@ -1395,7 +1403,7 @@ export default function AgendaPage() {
                             {appt.advance_amount > 0 && (
                               <span className="text-[9px] text-nd-accent">{t.deposit}: {formatCurrency(appt.advance_amount)}</span>
                             )}
-                            {salon?.message_template && (
+                            {messageTemplate && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); copyMessage(appt); }}
                                 title={t.copyMessage}
