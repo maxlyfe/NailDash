@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useT } from '@/contexts/LanguageContext';
 import { Loader2, Sparkles } from 'lucide-react';
+import ApkDownloadButton from '@/components/ApkDownloadButton';
 
 export default function LoginPage() {
   return (
@@ -34,6 +35,40 @@ function LoginContent() {
     try {
       const supabase = createClient();
 
+      // Detecta APK (Capacitor). No app nativo o login Google NÃO pode
+      // redirecionar a WebView para o Google (Google bloqueia WebView e o
+      // redirect não volta). Em vez disso abre um Custom Tab e retorna via
+      // deep link, tratado em NativeBridge.tsx.
+      const { Capacitor } = await import('@capacitor/core');
+      if (Capacitor.isNativePlatform()) {
+        const { Browser } = await import('@capacitor/browser');
+
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            // Bridge HTTPS que re-redireciona p/ com.naildash.pdv://login-callback
+            redirectTo: 'https://naildash.netlify.app/auth/native-callback',
+            skipBrowserRedirect: true,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'select_account',
+            },
+          },
+        });
+
+        if (error || !data?.url) {
+          console.error('OAuth error (native):', error);
+          setError(t.authFailed);
+          setLoading(false);
+          return;
+        }
+
+        await Browser.open({ url: data.url });
+        // O loading permanece até o appUrlOpen trocar o code e navegar.
+        return;
+      }
+
+      // Fluxo web normal: redireciona o mesmo tab para o Google.
       const redirectUrl = `${window.location.origin}/auth/callback`;
       console.log('Redirecting to Google OAuth, callback:', redirectUrl);
 
@@ -155,6 +190,11 @@ function LoginContent() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Android App Download */}
+        <div className="mt-5">
+          <ApkDownloadButton variant="link" />
         </div>
 
         {/* Footer */}

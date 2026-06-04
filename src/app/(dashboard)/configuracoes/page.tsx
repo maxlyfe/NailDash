@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import { useT, localeOptions } from '@/contexts/LanguageContext';
 import { Settings, Save, Loader2, Clock, Globe, MessageSquare, Tag } from 'lucide-react';
+import ApkDownloadButton from '@/components/ApkDownloadButton';
 
 type DayHours = { open: string; close: string } | null;
 type BusinessHours = Record<string, DayHours>;
@@ -243,6 +244,9 @@ export default function ConfiguracoesPage() {
           {savedMsg && <span className="text-xs text-nd-success font-medium">{t.savedSuccess}</span>}
         </div>
       </div>
+
+      {/* Android App Download */}
+      <ApkDownloadButton variant="card" />
     </div>
   );
 }

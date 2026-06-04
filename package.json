@@ -6,9 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "build:apk": "node scripts/build-apk.js"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/core": "^8.4.0",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.39.0",
     "csv-parse": "^6.1.0",
@@ -20,6 +24,9 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.4.0",
     "@types/node": "^20",
     "@types/papaparse": "^5.3.14",
     "@types/react": "^18",

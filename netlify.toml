@@ -4,3 +4,16 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Manifesto de atualização do APK: nunca cachear (sempre versão mais recente)
+[[headers]]
+  for = "/update-manifest.json"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate, no-cache, no-store"
+
+# APK: Content-Type correto (Android reconhece como instalável) + cache curto
+[[headers]]
+  for = "/downloads/*.apk"
+  [headers.values]
+    Content-Type = "application/vnd.android.package-archive"
+    Cache-Control = "public, max-age=600, must-revalidate"

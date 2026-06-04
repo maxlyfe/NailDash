@@ -1,0 +1,60 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8B4A0"/>
+      <stop offset="1" stop-color="#C8956C"/>
+    </linearGradient>
+    <linearGradient id="polish" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E8857A"/>
+      <stop offset="1" stop-color="#D4756A"/>
+    </linearGradient>
+    <linearGradient id="cap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3A302A"/>
+      <stop offset="1" stop-color="#2D2520"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FAF3EB"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- Soft halo behind the bottle -->
+  <circle cx="512" cy="540" r="300" fill="#FFFFFF" opacity="0.12"/>
+
+  <!-- ── Nail polish bottle (centered, within adaptive safe zone) ── -->
+  <g>
+    <!-- Cap / brush handle -->
+    <rect x="448" y="196" width="128" height="180" rx="26" fill="url(#cap)"/>
+    <!-- Cap shine -->
+    <rect x="470" y="214" width="20" height="146" rx="10" fill="#FFFFFF" opacity="0.16"/>
+    <!-- Neck -->
+    <rect x="478" y="372" width="68" height="48" rx="12" fill="#EFE6DA"/>
+
+    <!-- Bottle body (glass) -->
+    <rect x="356" y="414" width="312" height="356" rx="56" fill="url(#glass)" stroke="#E8DDD0" stroke-width="6"/>
+
+    <!-- Polish liquid inside (clipped to body shape) -->
+    <clipPath id="bodyClip">
+      <rect x="356" y="414" width="312" height="356" rx="56"/>
+    </clipPath>
+    <g clip-path="url(#bodyClip)">
+      <rect x="356" y="520" width="312" height="250" fill="url(#polish)"/>
+      <!-- liquid surface curve -->
+      <path d="M356 520 Q512 488 668 520 L668 560 L356 560 Z" fill="#E8857A"/>
+    </g>
+
+    <!-- Glass shine -->
+    <rect x="392" y="452" width="34" height="150" rx="17" fill="#FFFFFF" opacity="0.55"/>
+
+    <!-- Brush dab / drop coming from the cap -->
+    <path d="M512 372 C 500 408, 500 430, 512 452 C 524 430, 524 408, 512 372 Z" fill="#D4756A"/>
+  </g>
+
+  <!-- Small sparkle accent -->
+  <g fill="#FFFFFF" opacity="0.9">
+    <path d="M708 360 l10 26 26 10 -26 10 -10 26 -10 -26 -26 -10 26 -10 z"/>
+  </g>
+</svg>
