@@ -59,6 +59,17 @@ export type Client = {
   updated_at: string;
 };
 
+export type ClientNote = {
+  id: string;
+  salon_id: string;
+  client_id: string;
+  appointment_id: string | null;
+  note: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ServiceCategory = {
   id: string;
   salon_id: string;

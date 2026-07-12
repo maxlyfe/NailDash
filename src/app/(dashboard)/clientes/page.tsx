@@ -4,10 +4,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
-import type { Client } from '@/lib/types';
+import type { Client, ClientNote } from '@/lib/types';
 import {
   Users, Plus, Search, X, Phone, Mail, Star,
-  ChevronRight, Loader2, Trash2, Edit3, Save,
+  ChevronRight, Loader2, Trash2, Edit3, Save, History,
 } from 'lucide-react';
 
 type ModalMode = 'closed' | 'create' | 'edit' | 'view';
@@ -26,6 +26,10 @@ export default function ClientesPage() {
 
   // Form state
   const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '' });
+
+  // Timeline
+  const [timeline, setTimeline] = useState<ClientNote[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
 
   const fetchClients = useCallback(async () => {
     if (!salon?.id) return;
@@ -68,6 +72,24 @@ export default function ClientesPage() {
   const openView = (client: Client) => {
     setSelected(client);
     setModal('view');
+    fetchTimeline(client.id);
+  };
+
+  const fetchTimeline = async (clientId: string) => {
+    setTimelineLoading(true);
+    const { data } = await supabase
+      .from('client_notes')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false });
+    setTimeline(data || []);
+    setTimelineLoading(false);
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!confirm(t.deleteNoteConfirm)) return;
+    await supabase.from('client_notes').delete().eq('id', noteId);
+    setTimeline(tl => tl.filter(n => n.id !== noteId));
   };
 
   const handleSave = async () => {
@@ -287,6 +309,40 @@ export default function ClientesPage() {
                     {selected.notes}
                   </div>
                 )}
+
+                {/* Timeline */}
+                <div>
+                  <p className="section-label mb-2 flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5" /> {t.clientTimeline}
+                  </p>
+                  {timelineLoading ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="w-4 h-4 animate-spin text-nd-accent" />
+                    </div>
+                  ) : timeline.length === 0 ? (
+                    <p className="text-xs text-nd-muted italic">{t.noTimelineYet}</p>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {timeline.map(note => (
+                        <div key={note.id} className="relative p-3 rounded-xl bg-nd-surface/60 border border-nd-border/30 group">
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-[10px] font-semibold text-nd-accent uppercase tracking-wider">
+                              {new Date(note.created_at).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </p>
+                            <button
+                              onClick={() => handleDeleteNote(note.id)}
+                              className="p-1 rounded-lg hover:bg-nd-danger/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title={t.delete}
+                            >
+                              <Trash2 className="w-3 h-3 text-nd-danger" />
+                            </button>
+                          </div>
+                          <p className="text-sm text-nd-text whitespace-pre-wrap">{note.note}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex gap-3">
                   <button onClick={() => openEdit(selected)} className="btn-secondary text-sm flex-1">

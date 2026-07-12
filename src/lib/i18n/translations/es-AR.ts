@@ -289,6 +289,16 @@ const esAR: Translations = {
   annualNoDataHint: 'No hay movimientos registrados en este período.',
   irNote: 'Valores calculados a partir de los turnos cerrados y adelantos recibidos.',
 
+  // ── Client timeline ──
+  serviceNotes: 'Observaciones del turno',
+  serviceNotesPlaceholder: 'Cómo llegó la clienta y qué se le hizo...',
+  serviceNotesHint: 'Queda guardado en el historial de la clienta',
+  noteRequiresClient: 'Observaciones disponibles solo para clientas registradas',
+  lastServiceNote: 'Último turno',
+  clientTimeline: 'Historial de turnos',
+  noTimelineYet: 'Ningún turno registrado todavía',
+  deleteNoteConfirm: '¿Eliminar esta observación del historial?',
+
   // ── Short day names (agenda headers) ──
   dayShort_sun: 'Dom',
   dayShort_mon: 'Lun',

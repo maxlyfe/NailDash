@@ -287,6 +287,16 @@ const ptBR = {
   annualNoDataHint: 'Não há movimentações registradas neste período.',
   irNote: 'Valores apurados a partir dos turnos fechados e adiantamentos recebidos.',
 
+  // ── Client timeline ──
+  serviceNotes: 'Observações do atendimento',
+  serviceNotesPlaceholder: 'Como chegou a cliente e o que foi feito...',
+  serviceNotesHint: 'Fica salvo no histórico da cliente',
+  noteRequiresClient: 'Observações disponíveis apenas para clientes cadastradas',
+  lastServiceNote: 'Último atendimento',
+  clientTimeline: 'Histórico de atendimentos',
+  noTimelineYet: 'Nenhum atendimento registrado ainda',
+  deleteNoteConfirm: 'Excluir esta observação do histórico?',
+
   // ── Short day names (agenda headers) ──
   dayShort_sun: 'Dom',
   dayShort_mon: 'Seg',

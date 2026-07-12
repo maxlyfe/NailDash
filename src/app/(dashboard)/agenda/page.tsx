@@ -179,7 +179,12 @@ export default function AgendaPage() {
     extras: '0',
     extras_description: '',
     service_ids: [] as string[],
+    note: '',
   });
+  const [closeNoteId, setCloseNoteId] = useState<string | null>(null);
+
+  // Last note of the selected client (shown on create/edit)
+  const [lastClientNote, setLastClientNote] = useState<{ note: string; created_at: string } | null>(null);
 
   // Block form
   const [blockForm, setBlockForm] = useState({
@@ -424,6 +429,7 @@ export default function AgendaPage() {
     setClientSearch('');
     setServiceSearch('');
     setSelected(null);
+    setLastClientNote(null);
     setModal('create');
   };
 
@@ -460,6 +466,8 @@ export default function AgendaPage() {
     setClientSearch(appt.client_id ? (clientMap[appt.client_id] || '') : (appt.client_name || ''));
     setServiceSearch('');
     setSelected(appt);
+    setLastClientNote(null);
+    if (appt.client_id) fetchLastClientNote(appt.client_id);
     setModal('edit');
   };
 
@@ -503,6 +511,18 @@ export default function AgendaPage() {
     }, 0);
     const resolvedAppt = { ...fresh, total_amount: total || fresh.total_amount };
 
+    // Load existing timeline note for this appointment (re-close/edit case)
+    let existingNote = '';
+    let existingNoteId: string | null = null;
+    if (fresh.client_id) {
+      const { data: noteRow } = await supabase
+        .from('client_notes')
+        .select('id, note')
+        .eq('appointment_id', fresh.id)
+        .maybeSingle();
+      if (noteRow) { existingNote = noteRow.note; existingNoteId = noteRow.id; }
+    }
+
     setSelected(resolvedAppt);
     setCloseForm({
       payment_method: resolvedAppt.payment_method || 'pix',
@@ -510,7 +530,9 @@ export default function AgendaPage() {
       extras: String(resolvedAppt.extras || 0),
       extras_description: resolvedAppt.extras_description || '',
       service_ids: svcIds,
+      note: existingNote,
     });
+    setCloseNoteId(existingNoteId);
     setModal('close_shift');
   };
 
@@ -775,6 +797,29 @@ export default function AgendaPage() {
       });
     }
 
+    // Save/update the timeline note for the client
+    const noteText = closeForm.note.trim();
+    if (selected.client_id) {
+      if (closeNoteId) {
+        if (noteText) {
+          await supabase.from('client_notes').update({
+            note: noteText,
+            updated_at: new Date().toISOString(),
+          }).eq('id', closeNoteId);
+        } else {
+          await supabase.from('client_notes').delete().eq('id', closeNoteId);
+        }
+      } else if (noteText) {
+        await supabase.from('client_notes').insert({
+          salon_id: salon.id,
+          client_id: selected.client_id,
+          appointment_id: selected.id,
+          note: noteText,
+          created_by: user?.id || null,
+        });
+      }
+    }
+
     setModal('closed');
     await fetchAppointments();
     setSaving(false);
@@ -845,16 +890,30 @@ export default function AgendaPage() {
     return clients.filter(c => c.name.toLowerCase().includes(q)).slice(0, 10);
   }, [clientSearch, clients]);
 
+  const fetchLastClientNote = async (clientId: string) => {
+    const { data } = await supabase
+      .from('client_notes')
+      .select('note, created_at')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setLastClientNote(data || null);
+  };
+
   const selectClient = (client: PickClient) => {
     setForm(f => ({ ...f, client_id: client.id, client_name: client.name }));
     setClientSearch(client.name);
     setShowClientDropdown(false);
+    setLastClientNote(null);
+    fetchLastClientNote(client.id);
   };
 
   const handleClientSearchChange = (val: string) => {
     setClientSearch(val);
     setForm(f => ({ ...f, client_id: '', client_name: val }));
     setShowClientDropdown(true);
+    setLastClientNote(null);
   };
 
   // Service toggle / quantity
@@ -1805,6 +1864,14 @@ export default function AgendaPage() {
                       <Check className="w-3 h-3" /> Cliente cadastrado
                     </p>
                   )}
+                  {form.client_id && lastClientNote && (
+                    <div className="mt-2 p-3 rounded-xl bg-nd-accent/5 border border-nd-accent/15">
+                      <p className="text-[10px] font-semibold text-nd-accent uppercase tracking-wider mb-1">
+                        {t.lastServiceNote} · {new Date(lastClientNote.created_at).toLocaleDateString(locale)}
+                      </p>
+                      <p className="text-xs text-nd-text whitespace-pre-wrap">{lastClientNote.note}</p>
+                    </div>
+                  )}
                   {!form.client_id && clientSearch.trim() && (
                     <p className="text-[10px] text-nd-accent mt-1.5">Cliente avulso: &quot;{clientSearch.trim()}&quot;</p>
                   )}
@@ -2217,6 +2284,22 @@ export default function AgendaPage() {
                     placeholder="Ex: Pedrarias, decoração..."
                     className="input-field" />
                 </div>
+              )}
+
+              {/* Timeline note */}
+              {selected.client_id ? (
+                <div>
+                  <label className="section-label mb-1.5 block">{t.serviceNotes}</label>
+                  <textarea
+                    value={closeForm.note}
+                    onChange={e => setCloseForm(f => ({ ...f, note: e.target.value }))}
+                    placeholder={t.serviceNotesPlaceholder}
+                    className="input-field resize-none h-24"
+                  />
+                  <p className="text-[10px] text-nd-muted mt-1">{t.serviceNotesHint}</p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-nd-muted italic">{t.noteRequiresClient}</p>
               )}
 
               {/* Summary */}
