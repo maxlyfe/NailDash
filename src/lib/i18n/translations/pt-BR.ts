@@ -101,6 +101,7 @@ const ptBR = {
   status_in_progress: 'Em andamento',
   status_completed: 'Concluído',
   status_cancelled: 'Cancelado',
+  status_no_show: 'Faltou',
   // day view
   dayView: 'Dia',
   weekView: 'Semana',
@@ -295,6 +296,8 @@ const ptBR = {
   lastServiceNote: 'Último atendimento',
   clientTimeline: 'Histórico de atendimentos',
   noTimelineYet: 'Nenhum atendimento registrado ainda',
+  clientNotes: 'Observações',
+  noAppointments: 'Nenhum atendimento encontrado',
   deleteNoteConfirm: 'Excluir esta observação do histórico?',
 
   // ── Short day names (agenda headers) ──

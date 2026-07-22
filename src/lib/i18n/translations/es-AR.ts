@@ -103,6 +103,7 @@ const esAR: Translations = {
   status_in_progress: 'En curso',
   status_completed: 'Completado',
   status_cancelled: 'Cancelado',
+  status_no_show: 'No vino',
   // day view
   dayView: 'Día',
   weekView: 'Semana',
@@ -297,6 +298,8 @@ const esAR: Translations = {
   lastServiceNote: 'Último turno',
   clientTimeline: 'Historial de turnos',
   noTimelineYet: 'Ningún turno registrado todavía',
+  clientNotes: 'Observaciones',
+  noAppointments: 'Ningún turno encontrado',
   deleteNoteConfirm: '¿Eliminar esta observación del historial?',
 
   // ── Short day names (agenda headers) ──
