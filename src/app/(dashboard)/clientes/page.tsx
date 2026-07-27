@@ -46,7 +46,7 @@ export default function ClientesPage() {
     setLoading(true);
     const [{ data }, { data: apptCounts }] = await Promise.all([
       supabase.from('clients').select('*').eq('salon_id', salon.id).order('name'),
-      supabase.from('appointments').select('client_id').eq('salon_id', salon.id).eq('status', 'completed'),
+      supabase.from('appointments').select('client_id').eq('salon_id', salon.id).eq('status', 'completed').limit(10000),
     ]);
     setClients(data || []);
     const counts: Record<string, number> = {};
