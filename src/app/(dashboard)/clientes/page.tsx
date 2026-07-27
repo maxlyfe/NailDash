@@ -44,13 +44,18 @@ export default function ClientesPage() {
   const fetchClients = useCallback(async () => {
     if (!salon?.id) return;
     setLoading(true);
-    const [{ data }, { data: apptCounts }] = await Promise.all([
-      supabase.from('clients').select('*').eq('salon_id', salon.id).order('name'),
-      supabase.from('appointments').select('client_id').eq('salon_id', salon.id).eq('status', 'completed').limit(10000),
-    ]);
-    setClients(data || []);
+    const { data } = await supabase
+      .from('clients')
+      .select('*, appointments(count)')
+      .eq('salon_id', salon.id)
+      .eq('appointments.status', 'completed')
+      .order('name');
+    const rows = (data || []) as any[];
     const counts: Record<string, number> = {};
-    (apptCounts || []).forEach((a: any) => { if (a.client_id) counts[a.client_id] = (counts[a.client_id] || 0) + 1; });
+    rows.forEach((c: any) => {
+      counts[c.id] = c.appointments?.[0]?.count ?? 0;
+    });
+    setClients(rows);
     setVisitCounts(counts);
     setLoading(false);
   }, [salon?.id]);
