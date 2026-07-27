@@ -23,8 +23,9 @@ const DEFAULT_HOURS: BusinessHours = {
 const TEMPLATE_TAGS = [
   { key: '{nome}',     label: 'Nome cliente' },
   { key: '{servicos}', label: 'Serviços' },
-  { key: '{data}',     label: 'Data' },
-  { key: '{hora}',     label: 'Hora' },
+  { key: '{data}',       label: 'Data' },
+  { key: '{dia_semana}', label: 'Dia da semana' },
+  { key: '{hora}',       label: 'Hora' },
   { key: '{total}',    label: 'Total' },
   { key: '{sinal}',    label: 'Sinal' },
 ];

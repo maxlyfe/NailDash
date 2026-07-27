@@ -1032,6 +1032,7 @@ export default function AgendaPage() {
       .replace(/{nome}/g, clientName)
       .replace(/{servicos}/g, svcName)
       .replace(/{data}/g, formatDate(appt.starts_at))
+      .replace(/{dia_semana}/g, new Date(appt.starts_at).toLocaleDateString(locale, { weekday: 'long' }))
       .replace(/{hora}/g, formatTime(appt.starts_at))
       .replace(/{total}/g, formatCurrency(appt.total_amount || 0))
       .replace(/{sinal}/g, appt.advance_amount > 0 ? formatCurrency(appt.advance_amount) : '–');
