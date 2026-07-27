@@ -8,7 +8,7 @@ import {
   CalendarDays, Plus, X, Loader2, Save, Trash2,
   ChevronLeft, ChevronRight, User, Clock, Search,
   DollarSign, CreditCard, Banknote, ArrowDownLeft,
-  Check, Pencil, ClipboardCopy, Lock,
+  Check, Pencil, ClipboardCopy, Lock, MessageSquare, ChevronDown,
 } from 'lucide-react';
 
 /* ─── Types ─── */
@@ -185,6 +185,11 @@ export default function AgendaPage() {
 
   // Last note of the selected client (shown on create/edit)
   const [lastClientNote, setLastClientNote] = useState<{ note: string; created_at: string } | null>(null);
+
+  // Note for the viewed closed appointment + all client notes history
+  const [closedApptNote, setClosedApptNote] = useState<string | null>(null);
+  const [allClientNotes, setAllClientNotes] = useState<{ id: string; note: string; created_at: string; appointment_id: string | null }[]>([]);
+  const [showAllNotes, setShowAllNotes] = useState(false);
 
   // Block form
   const [blockForm, setBlockForm] = useState({
@@ -467,7 +472,20 @@ export default function AgendaPage() {
     setServiceSearch('');
     setSelected(appt);
     setLastClientNote(null);
-    if (appt.client_id) fetchLastClientNote(appt.client_id);
+    setClosedApptNote(null);
+    setAllClientNotes([]);
+    setShowAllNotes(false);
+    if (appt.client_id) {
+      fetchLastClientNote(appt.client_id);
+      if (appt.status === 'completed') {
+        supabase.from('client_notes').select('id, note, created_at, appointment_id')
+          .eq('appointment_id', appt.id).maybeSingle()
+          .then(({ data }: any) => { if (data) setClosedApptNote(data.note); });
+        supabase.from('client_notes').select('id, note, created_at, appointment_id')
+          .eq('client_id', appt.client_id).order('created_at', { ascending: false })
+          .then(({ data }: any) => { if (data) setAllClientNotes(data); });
+      }
+    }
     setModal('edit');
   };
 
@@ -1793,7 +1811,44 @@ export default function AgendaPage() {
                   )}
                 </div>
 
-                {/* Observações */}
+                {/* Observações do atendimento (client_notes) */}
+                {closedApptNote && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.serviceNotes}</p>
+                    <div className="bg-nd-surface rounded-xl p-3 flex items-start gap-2">
+                      <MessageSquare className="w-3.5 h-3.5 text-nd-accent mt-0.5 shrink-0" />
+                      <p className="text-sm text-nd-heading whitespace-pre-wrap">{closedApptNote}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Histórico de observações da cliente */}
+                {selected.client_id && allClientNotes.length > 0 && (
+                  <div>
+                    <button
+                      onClick={() => setShowAllNotes(!showAllNotes)}
+                      className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-nd-accent hover:text-nd-accent/80 transition-colors"
+                    >
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAllNotes ? 'rotate-180' : ''}`} />
+                      {t.clientTimeline || 'Histórico de observações'} ({allClientNotes.length})
+                    </button>
+                    {showAllNotes && (
+                      <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                        {allClientNotes.map(n => (
+                          <div key={n.id} className={`rounded-lg p-2.5 border text-xs ${n.appointment_id === selected.id ? 'border-nd-accent/30 bg-nd-accent/5' : 'border-nd-border/20 bg-nd-surface'}`}>
+                            <p className="text-nd-muted text-[10px] mb-1">
+                              {new Date(n.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              {n.appointment_id === selected.id && <span className="ml-1.5 text-nd-accent font-semibold">· este atendimento</span>}
+                            </p>
+                            <p className="text-nd-heading whitespace-pre-wrap">{n.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Notas gerais do agendamento */}
                 {selected.notes && (
                   <div>
                     <p className="text-[10px] uppercase tracking-wider font-semibold text-nd-muted mb-2">{t.notes}</p>

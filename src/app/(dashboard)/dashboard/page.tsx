@@ -154,6 +154,7 @@ export default function DashboardPage() {
       wEnd.setHours(23, 59, 59, 999);
       const label = `${wStart.getDate()}-${wEnd.getDate()}`;
       const weekAppts = monthAppts.filter((a: any) => {
+        if (a.status === 'blocked') return false;
         const ad = new Date(a.starts_at);
         return ad >= wStart && ad <= wEnd;
       });
@@ -261,9 +262,13 @@ export default function DashboardPage() {
               <BarChart3 className="w-4 h-4 text-nd-accent" />
               <h2 className="text-sm font-semibold text-nd-heading capitalize">{t.monthlyOverview} — {monthName}</h2>
             </div>
-            <div className="flex items-center gap-4 mb-3 text-[11px] text-nd-muted">
+            <div className="flex items-center gap-4 mb-1 text-[11px] text-nd-muted">
               <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-nd-success/70" />{t.closed}</span>
               <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-nd-accent/30" />{t.forecast}</span>
+            </div>
+            <div className="flex items-center gap-4 mb-3 text-[11px]">
+              <span className="font-bold text-nd-success">{formatCurrency(weeklyData.reduce((s, w) => s + w.revenue, 0))}</span>
+              <span className="font-medium text-nd-accent">{formatCurrency(weeklyData.reduce((s, w) => s + w.pendingRevenue, 0))}</span>
             </div>
             {/* Bar chart */}
             <div className="relative pt-24">

@@ -300,7 +300,7 @@ export default function ClientesPage() {
 
                 <div className="grid grid-cols-3 gap-4">
                   <div className="card-glow p-3 text-center">
-                    <p className="text-lg font-bold text-nd-heading">{selected.visit_count}</p>
+                    <p className="text-lg font-bold text-nd-heading">{history.filter(a => a.status === 'completed').length}</p>
                     <p className="text-[10px] text-nd-muted uppercase">{t.visits}</p>
                   </div>
                   <div className="card-glow p-3 text-center">
