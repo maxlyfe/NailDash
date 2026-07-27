@@ -19,6 +19,7 @@ export default function ClientesPage() {
   const supabase = useSupabase();
 
   const [clients, setClients] = useState<Client[]>([]);
+  const [visitCounts, setVisitCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<ModalMode>('closed');
@@ -43,12 +44,14 @@ export default function ClientesPage() {
   const fetchClients = useCallback(async () => {
     if (!salon?.id) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('salon_id', salon.id)
-      .order('name');
+    const [{ data }, { data: apptCounts }] = await Promise.all([
+      supabase.from('clients').select('*').eq('salon_id', salon.id).order('name'),
+      supabase.from('appointments').select('client_id').eq('salon_id', salon.id).eq('status', 'completed'),
+    ]);
     setClients(data || []);
+    const counts: Record<string, number> = {};
+    (apptCounts || []).forEach((a: any) => { if (a.client_id) counts[a.client_id] = (counts[a.client_id] || 0) + 1; });
+    setVisitCounts(counts);
     setLoading(false);
   }, [salon?.id]);
 
@@ -247,7 +250,7 @@ export default function ClientesPage() {
                 </div>
                 <div className="text-right shrink-0 hidden sm:block">
                   <p className="text-sm font-semibold text-nd-heading">{formatCurrency(client.total_spent)}</p>
-                  <p className="text-xs text-nd-muted">{client.visit_count} {t.visits.toLowerCase()}</p>
+                  <p className="text-xs text-nd-muted">{visitCounts[client.id] || 0} {t.visits.toLowerCase()}</p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-nd-muted/30 shrink-0" />
               </button>
