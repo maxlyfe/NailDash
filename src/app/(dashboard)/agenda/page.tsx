@@ -4,6 +4,12 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
+import { syncAdvanceTransaction, deleteAdvanceTransactions, deleteAppointmentTransactions } from '@/lib/advances';
+import { emitDataChange, useLiveData } from '@/lib/live-data';
+import {
+  spInputValue, spFromInput, spFromDateAndTime, spDayKeyRange, spDateKey,
+  spMinutesOfDay, spParts, spTodayDate, spNowMinutes, spFormatDate, spFormatTime,
+} from '@/lib/dates';
 import {
   CalendarDays, Plus, X, Loader2, Save, Trash2,
   ChevronLeft, ChevronRight, User, Clock, Search,
@@ -82,14 +88,9 @@ function parseHour(timeStr: string): number {
   return parseInt(timeStr.split(':')[0], 10);
 }
 
+/** Fills <input type="datetime-local"> with the salon's wall clock, not the device's. */
 function toLocalInput(isoStr: string): string {
-  const d = new Date(isoStr);
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const h = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  return `${y}-${mo}-${day}T${h}:${min}`;
+  return spInputValue(isoStr);
 }
 
 /* ─── Component ─── */
@@ -143,7 +144,8 @@ export default function AgendaPage() {
   const [profMap, setProfMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
-  const today = useMemo(() => new Date(), []);
+  // "Today" is the salon's today — a device in another timezone must not shift the grid
+  const today = useMemo(() => spTodayDate(), []);
   const [currentDate, setCurrentDate] = useState(today);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [modal, setModal] = useState<ModalMode>('closed');
@@ -230,7 +232,7 @@ export default function AgendaPage() {
       pendingWeekPageRef.current = null;
     } else {
       // Auto-select page based on today's position in the week
-      const now = new Date();
+      const now = spTodayDate();
       const todayIdx = weekDays.findIndex(d => isSameDay(d, now));
       setWeekPage(todayIdx >= 4 ? 1 : 0);
     }
@@ -281,10 +283,14 @@ export default function AgendaPage() {
   }, [salon?.id]);
 
   // Fetch appointments
-  const fetchAppointments = useCallback(async () => {
+  // `silent` skips the spinner: live refreshes should update the numbers in place,
+  // not blank the grid out every time another screen writes something.
+  const fetchAppointments = useCallback(async (silent = false) => {
     if (!salon?.id) return; // Wait for salon — don't show empty state
-    setLoading(true);
-    let rangeStart: string, rangeEnd: string;
+    if (!silent) setLoading(true);
+    // Bounds are the salon's calendar days turned into exact instants, so a turno
+    // at 21h belongs to the day it was booked on and not to the next one.
+    let firstKey: string, lastKey: string;
     if (viewMode === 'month') {
       const y = currentDate.getFullYear(), m = currentDate.getMonth();
       const firstDay = new Date(y, m, 1);
@@ -292,15 +298,16 @@ export default function AgendaPage() {
       // Extend to cover full calendar weeks
       firstDay.setDate(firstDay.getDate() - firstDay.getDay());
       lastDay.setDate(lastDay.getDate() + (6 - lastDay.getDay()));
-      rangeStart = `${toDateStr(firstDay)}T00:00:00`;
-      rangeEnd = `${toDateStr(lastDay)}T23:59:59`;
+      firstKey = toDateStr(firstDay);
+      lastKey = toDateStr(lastDay);
     } else if (viewMode === 'week') {
-      rangeStart = `${toDateStr(weekStart)}T00:00:00`;
-      rangeEnd = `${toDateStr(weekEnd)}T23:59:59`;
+      firstKey = toDateStr(weekStart);
+      lastKey = toDateStr(weekEnd);
     } else {
-      rangeStart = `${toDateStr(currentDate)}T00:00:00`;
-      rangeEnd = `${toDateStr(currentDate)}T23:59:59`;
+      firstKey = toDateStr(currentDate);
+      lastKey = firstKey;
     }
+    const { start: rangeStart, end: rangeEnd } = spDayKeyRange(firstKey, lastKey);
 
     const { data } = await supabase
       .from('appointments')
@@ -343,6 +350,9 @@ export default function AgendaPage() {
 
   useEffect(() => { fetchAppointments(); }, [fetchAppointments]);
 
+  // Live: recalculate whenever appointments or transactions change anywhere.
+  useLiveData(supabase, salon?.id, ['appointments', 'transactions'], () => fetchAppointments(true));
+
   // Close client dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -383,17 +393,12 @@ export default function AgendaPage() {
 
   const getApptForDay = (day: Date) => {
     const ds = toDateStr(day);
-    return appointments.filter(a => {
-      const ad = new Date(a.starts_at);
-      return toDateStr(ad) === ds;
-    });
+    return appointments.filter(a => spDateKey(a.starts_at) === ds);
   };
 
   const getApptStyle = (appt: ApptRow) => {
-    const start = new Date(appt.starts_at);
-    const end = new Date(appt.ends_at);
-    const startMin = start.getHours() * 60 + start.getMinutes();
-    const endMin = end.getHours() * 60 + end.getMinutes();
+    const startMin = spMinutesOfDay(appt.starts_at);
+    const endMin = spMinutesOfDay(appt.ends_at);
     const top = (startMin / 60) * slotHeight;
     const height = Math.max(((endMin - startMin) / 60) * slotHeight, 24);
     return { top: `${top}px`, height: `${height}px` };
@@ -565,8 +570,9 @@ export default function AgendaPage() {
       client_id: form.client_id || null,
       client_name: form.client_name.trim() || null,
       professional_id: form.professional_id,
-      starts_at: new Date(form.starts_at).toISOString(),
-      ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : new Date(form.starts_at).toISOString(),
+      // The time typed in the form is Brasília time, whatever the device clock says
+      starts_at: spFromInput(form.starts_at),
+      ends_at: spFromInput(form.ends_at || form.starts_at),
       status: form.status,
       notes: form.notes.trim() || null,
       created_by: user?.id || null,
@@ -588,12 +594,17 @@ export default function AgendaPage() {
       payload.advance_paid_at = new Date().toISOString();
       payload.status = 'confirmed';
     } else if (modal === 'edit' && selected) {
-      // On edit, update advance if changed
+      // On edit, update advance if the amount or the payment method changed
       const prevAdvance = selected.advance_amount || 0;
-      if (advanceAmt !== prevAdvance) {
+      const prevMethod = selected.advance_payment_method || null;
+      const nextMethod = advanceAmt > 0 ? form.advance_payment_method : null;
+      if (advanceAmt !== prevAdvance || nextMethod !== prevMethod) {
         payload.advance_amount = advanceAmt;
-        payload.advance_payment_method = advanceAmt > 0 ? form.advance_payment_method : null;
-        payload.advance_paid_at = advanceAmt > 0 ? new Date().toISOString() : null;
+        payload.advance_payment_method = nextMethod;
+        // Keep the original payment date when only the method was corrected
+        payload.advance_paid_at = advanceAmt > 0
+          ? (selected.advance_paid_at || new Date().toISOString())
+          : null;
       }
     }
 
@@ -612,23 +623,17 @@ export default function AgendaPage() {
         });
         await supabase.from('appointment_services').insert(svcRows);
       }
-      // Create advance transaction (transaction_date = appointment date, not today)
-      if (advanceAmt > 0) {
-        await supabase.from('transactions').insert({
-          salon_id: salon.id,
-          type: 'sale',
-          appointment_id: newAppt.id,
-          client_id: form.client_id || null,
-          professional_id: form.professional_id,
-          description: `Adiantamento: ${form.client_name.trim() || t.client}`,
-          total_amount: advanceAmt,
-          service_price: 0, discount: 0, tax: 0, tips: 0,
-          category: 'adiantamento',
-          [`payment_${form.advance_payment_method}`]: advanceAmt,
-          transaction_date: new Date(form.starts_at).toISOString(),
-          registered_at: new Date().toISOString(),
-        });
-      }
+      // Mirror the advance into transactions (transaction_date = appointment date, not today)
+      if (advanceAmt > 0) await syncAdvanceTransaction(supabase, {
+        salonId: salon.id,
+        appointmentId: newAppt.id,
+        clientId: form.client_id || null,
+        professionalId: form.professional_id,
+        description: `Adiantamento: ${form.client_name.trim() || t.client}`,
+        amount: advanceAmt,
+        paymentMethod: form.advance_payment_method,
+        appointmentDate: spFromInput(form.starts_at),
+      });
     } else if (selected) {
       const { error: err } = await supabase.from('appointments').update(payload).eq('id', selected.id);
       if (err) { alert(`Erro: ${err.message}`); setSaving(false); return; }
@@ -646,28 +651,23 @@ export default function AgendaPage() {
         });
         await supabase.from('appointment_services').insert(svcRows);
       }
-      // If advance was added/changed during edit (transaction_date = appointment date)
-      const prevAdvance = selected.advance_amount || 0;
-      if (advanceAmt > 0 && advanceAmt !== prevAdvance) {
-        await supabase.from('transactions').insert({
-          salon_id: salon.id,
-          type: 'sale',
-          appointment_id: selected.id,
-          client_id: form.client_id || null,
-          professional_id: form.professional_id,
-          description: `Adiantamento: ${getApptDisplayName(selected)}`,
-          total_amount: advanceAmt,
-          service_price: 0, discount: 0, tax: 0, tips: 0,
-          category: 'adiantamento',
-          [`payment_${form.advance_payment_method}`]: advanceAmt,
-          transaction_date: new Date(form.starts_at).toISOString(),
-          registered_at: new Date().toISOString(),
-        });
-      }
+      // Always re-sync: this covers a changed amount, a removed advance, a corrected
+      // payment method, and a remarcação (transaction_date follows the new date).
+      await syncAdvanceTransaction(supabase, {
+        salonId: salon.id,
+        appointmentId: selected.id,
+        clientId: form.client_id || null,
+        professionalId: form.professional_id,
+        description: `Adiantamento: ${getApptDisplayName(selected)}`,
+        amount: advanceAmt,
+        paymentMethod: form.advance_payment_method,
+        appointmentDate: spFromInput(form.starts_at),
+      });
     }
 
     setModal('closed');
     await fetchAppointments();
+    emitDataChange();
     setSaving(false);
   };
 
@@ -686,29 +686,21 @@ export default function AgendaPage() {
     const { error: err } = await supabase.from('appointments').update(updateData).eq('id', selected.id);
     if (err) { alert(`Erro: ${err.message}`); setSaving(false); return; }
 
-    // Register advance as transaction (transaction_date = appointment date, not today)
-    if (amount > 0) {
-      await supabase.from('transactions').insert({
-        salon_id: salon.id,
-        type: 'sale',
-        appointment_id: selected.id,
-        client_id: selected.client_id || null,
-        professional_id: selected.professional_id,
-        description: `Adiantamento: ${getApptDisplayName(selected)}`,
-        total_amount: amount,
-        service_price: 0,
-        discount: 0,
-        tax: 0,
-        tips: 0,
-        category: 'adiantamento',
-        [`payment_${advanceForm.payment_method}`]: amount,
-        transaction_date: new Date(selected.starts_at).toISOString(),
-        registered_at: new Date().toISOString(),
-      });
-    }
+    // Mirror into transactions — idempotent, so confirming twice can't double the value
+    await syncAdvanceTransaction(supabase, {
+      salonId: salon.id,
+      appointmentId: selected.id,
+      clientId: selected.client_id || null,
+      professionalId: selected.professional_id,
+      description: `Adiantamento: ${getApptDisplayName(selected)}`,
+      amount,
+      paymentMethod: advanceForm.payment_method,
+      appointmentDate: selected.starts_at, // already a stored instant
+    });
 
     setModal('closed');
     await fetchAppointments();
+    emitDataChange();
     setSaving(false);
   };
 
@@ -840,6 +832,7 @@ export default function AgendaPage() {
 
     setModal('closed');
     await fetchAppointments();
+    emitDataChange();
     setSaving(false);
   };
 
@@ -864,8 +857,8 @@ export default function AgendaPage() {
       ? professionals.map(p => p.id)
       : [blockForm.professional_id].filter(Boolean);
     for (const pid of profIds) {
-      const startsAt = new Date(`${blockForm.date}T${blockForm.starts_at}`).toISOString();
-      const endsAt = new Date(`${blockForm.date}T${blockForm.ends_at}`).toISOString();
+      const startsAt = spFromDateAndTime(blockForm.date, blockForm.starts_at);
+      const endsAt = spFromDateAndTime(blockForm.date, blockForm.ends_at);
       await supabase.from('appointments').insert({
         salon_id: salon.id,
         professional_id: pid,
@@ -890,15 +883,25 @@ export default function AgendaPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm(t.deleteAppointmentConfirm)) return;
+    // Drop the money rows too — an orphan transaction keeps inflating the financials
+    await deleteAppointmentTransactions(supabase, id);
     await supabase.from('appointment_services').delete().eq('appointment_id', id);
     await supabase.from('appointments').delete().eq('id', id);
     setModal('closed');
-    fetchAppointments();
+    await fetchAppointments();
+    emitDataChange();
   };
 
   const handleStatusChange = async (id: string, status: string) => {
     await supabase.from('appointments').update({ status }).eq('id', id);
-    fetchAppointments();
+    // A cancelled turno is no longer a held advance, so it leaves the financial totals.
+    // `advance_amount` stays on the appointment as the record of what the client paid —
+    // if the cancellation is undone, the next save re-creates the transaction.
+    if (status === 'cancelled') {
+      await deleteAdvanceTransactions(supabase, id);
+    }
+    await fetchAppointments();
+    emitDataChange();
   };
 
   // Client search logic
@@ -1020,8 +1023,8 @@ export default function AgendaPage() {
   }, [selectedServicesTotal, modal]);
 
   const formatCurrency = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: t.currency });
-  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-  const formatDate = (iso: string) => new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const formatTime = (iso: string) => spFormatTime(iso, locale);
+  const formatDate = (iso: string) => spFormatDate(iso, locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const copyMessage = async (appt: ApptRow) => {
     const template = messageTemplate;
@@ -1032,7 +1035,7 @@ export default function AgendaPage() {
       .replace(/{nome}/g, clientName)
       .replace(/{servicos}/g, svcName)
       .replace(/{data}/g, formatDate(appt.starts_at))
-      .replace(/{dia_semana}/g, new Date(appt.starts_at).toLocaleDateString(locale, { weekday: 'long' }))
+      .replace(/{dia_semana}/g, spFormatDate(appt.starts_at, locale, { weekday: 'long' }))
       .replace(/{hora}/g, formatTime(appt.starts_at))
       .replace(/{total}/g, formatCurrency(appt.total_amount || 0))
       .replace(/{sinal}/g, appt.advance_amount > 0 ? formatCurrency(appt.advance_amount) : '–');
@@ -1053,7 +1056,7 @@ export default function AgendaPage() {
     }
   };
 
-  const isCurrentWeek = isSameDay(weekDays[0], getWeekDays(new Date())[0]);
+  const isCurrentWeek = isSameDay(weekDays[0], getWeekDays(spTodayDate())[0]);
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => i);
 
   const headerLabel = viewMode === 'month'
@@ -1178,7 +1181,7 @@ export default function AgendaPage() {
             <Lock className="w-4 h-4 text-nd-muted" />
             <span className="hidden sm:inline text-nd-muted">{t.blockTime}</span>
           </button>
-          <button onClick={() => openCreateAt(currentDate, new Date().getHours())} className="btn-primary text-sm">
+          <button onClick={() => openCreateAt(currentDate, spParts(Date.now()).hour)} className="btn-primary text-sm">
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">{t.add}</span>
           </button>
@@ -1225,7 +1228,7 @@ export default function AgendaPage() {
               )}
             </div>
             {visibleDays.map((day, i) => {
-              const isToday = isSameDay(day, new Date());
+              const isToday = isSameDay(day, spTodayDate());
               const dayBh = bh[String(day.getDay())];
               const isClosed = !dayBh;
               const dayApptCount = getApptForDay(day).length;
@@ -1271,7 +1274,7 @@ export default function AgendaPage() {
                         onClick={() => openCreateAt(day, hour)}
                         className={`border-r border-b border-nd-border/15 last:border-r-0 transition-colors relative cursor-pointer hover:bg-nd-accent/5 ${
                           isBusinessHour
-                            ? isSameDay(day, new Date()) ? 'bg-nd-accent/[0.03]' : 'bg-white'
+                            ? isSameDay(day, spTodayDate()) ? 'bg-nd-accent/[0.03]' : 'bg-white'
                             : isClosed ? 'bg-nd-surface/40' : 'bg-nd-surface/20'
                         }`}
                         style={{ height: `${slotHeight}px` }}
@@ -1364,8 +1367,8 @@ export default function AgendaPage() {
 
               {/* Current time indicator */}
               {isCurrentWeek && (() => {
-                const now = new Date();
-                const mins = now.getHours() * 60 + now.getMinutes();
+                const now = spTodayDate();
+                const mins = spNowMinutes();
                 const top = (mins / 60) * slotHeight;
                 const dayIndex = visibleDays.findIndex(d => isSameDay(d, now));
                 if (dayIndex < 0) return null;
@@ -1391,7 +1394,7 @@ export default function AgendaPage() {
           {/* Day header with week strip — fixed above scroll area */}
           <div className="flex border-b border-nd-border/50 overflow-x-auto shrink-0 bg-nd-card">
             {filteredWeekDays.map((day, i) => {
-              const isToday = isSameDay(day, new Date());
+              const isToday = isSameDay(day, spTodayDate());
               const isSelected = isSameDay(day, currentDate);
               const dayApptCount = getApptForDay(day).length;
               return (
@@ -1597,9 +1600,8 @@ export default function AgendaPage() {
               })}
 
               {/* Current time indicator */}
-              {isSameDay(currentDate, new Date()) && (() => {
-                const now = new Date();
-                const mins = now.getHours() * 60 + now.getMinutes();
+              {isSameDay(currentDate, spTodayDate()) && (() => {
+                const mins = spNowMinutes();
                 const top = (mins / 60) * slotHeight;
                 return (
                   <div className="absolute h-0.5 bg-nd-danger z-20 pointer-events-none" style={{ top: `${top}px`, left: '56px', right: 0 }}>
@@ -1625,7 +1627,7 @@ export default function AgendaPage() {
               return (
                 <div key={wi} className="grid grid-cols-7 border-b border-nd-border/10 min-h-[100px]">
                   {week.map((day, di) => {
-                    const isToday = isSameDay(day, new Date());
+                    const isToday = isSameDay(day, spTodayDate());
                     const isCurrentMonth = day.getMonth() === currentDate.getMonth();
                     const isClosed = !dayBhWeek[di];
                     const dayAppts = getApptForDay(day);
@@ -1645,7 +1647,7 @@ export default function AgendaPage() {
                         )}
                         <div className="space-y-0.5">
                           {dayAppts.slice(0, 4).map(appt => {
-                            const hour = new Date(appt.starts_at).getHours();
+                            const hour = spParts(appt.starts_at).hour;
                             const isCl = appt.status === 'completed';
                             return (
                               <div key={appt.id}

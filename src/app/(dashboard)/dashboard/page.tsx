@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
+import { useLiveData } from '@/lib/live-data';
+import { spNow, spInstant, spMonthRange, spFormatDate } from '@/lib/dates';
 import {
   CalendarDays, DollarSign, TrendingUp, Users,
   ArrowUpRight, Clock, Sparkles, Loader2,
@@ -40,12 +42,12 @@ export default function DashboardPage() {
   const [dateStr, setDateStr] = useState('');
 
   useEffect(() => {
-    const h = new Date().getHours();
+    const h = spNow().hour;
     if (h < 12) setGreeting(t.greeting_morning);
     else if (h < 18) setGreeting(t.greeting_afternoon);
     else setGreeting(t.greeting_evening);
 
-    setDateStr(new Date().toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' }));
+    setDateStr(spFormatDate(Date.now(), locale, { weekday: 'long', day: 'numeric', month: 'long' }));
   }, [t, locale]);
 
   const [stats, setStats] = useState<Stats>({
@@ -58,17 +60,18 @@ export default function DashboardPage() {
   const [activeBar, setActiveBar] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchDashboard = useCallback(async () => {
+  // `silent` skips the spinner so live refreshes update the numbers in place
+  const fetchDashboard = useCallback(async (silent = false) => {
     if (!salon?.id) return; // Wait for salon — don't show zeros
-    setLoading(true);
+    if (!silent) setLoading(true);
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
-    const monthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 0, 23, 59, 59, 999);
+    // "Today" and "this month" are the salon's, not the device's
+    const now = spNow();
+    const todayStart = spInstant(now.year, now.month, now.day);
+    const todayEnd = new Date(spInstant(now.year, now.month, now.day + 1).getTime() - 1);
+    const { start: monthStartIso, end: monthEndIso } = spMonthRange(now.year, now.month);
+    const monthStart = new Date(monthStartIso);
+    const monthEnd = new Date(monthEndIso);
 
     const [salesRes, clientsRes, recentRes, apptsRes, monthApptsRes, pendingAdvRes] = await Promise.all([
       supabase
@@ -144,18 +147,16 @@ export default function DashboardPage() {
     // Process monthly appointments into weekly buckets
     const monthAppts = (monthApptsRes.data || []) as any[];
     const weeks: { label: string; completed: number; pending: number; revenue: number; pendingRevenue: number }[] = [];
-    // Get week boundaries for the month
-    const d = new Date(monthStart);
-    while (d <= monthEnd) {
-      const wStart = new Date(d);
-      const wEnd = new Date(d);
-      wEnd.setDate(wEnd.getDate() + 6);
-      if (wEnd > monthEnd) wEnd.setTime(monthEnd.getTime());
-      wEnd.setHours(23, 59, 59, 999);
-      const label = `${wStart.getDate()}-${wEnd.getDate()}`;
+    // Week buckets by São Paulo calendar day, so a turno at 21h stays in its own week
+    const daysInMonth = new Date(Date.UTC(now.year, now.month, 0)).getUTCDate();
+    for (let startDay = 1; startDay <= daysInMonth; startDay += 7) {
+      const endDay = Math.min(startDay + 6, daysInMonth);
+      const wStart = spInstant(now.year, now.month, startDay).getTime();
+      const wEnd = spInstant(now.year, now.month, endDay + 1).getTime() - 1;
+      const label = `${startDay}-${endDay}`;
       const weekAppts = monthAppts.filter((a: any) => {
         if (a.status === 'blocked') return false;
-        const ad = new Date(a.starts_at);
+        const ad = new Date(a.starts_at).getTime();
         return ad >= wStart && ad <= wEnd;
       });
       const completed = weekAppts.filter((a: any) => a.status === 'completed').length;
@@ -167,14 +168,16 @@ export default function DashboardPage() {
         .filter((a: any) => a.status !== 'completed')
         .reduce((s: number, a: any) => s + (a.total_amount || 0), 0);
       weeks.push({ label, completed, pending, revenue, pendingRevenue });
-      d.setDate(d.getDate() + 7);
     }
     setWeeklyData(weeks);
 
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [salon?.id]);
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+
+  // Live: recalculate whenever appointments or transactions change anywhere
+  useLiveData(supabase, salon?.id, ['appointments', 'transactions'], () => fetchDashboard(true));
 
   const formatCurrency = (v: number) =>
     v.toLocaleString(locale, { style: 'currency', currency: t.currency });
@@ -255,7 +258,7 @@ export default function DashboardPage() {
       {!loading && weeklyData.length > 0 && (() => {
         const maxVal = Math.max(...weeklyData.map(w => w.completed + w.pending), 1);
         const chartH = 140;
-        const monthName = new Date().toLocaleDateString(locale, { month: 'long' });
+        const monthName = spFormatDate(Date.now(), locale, { month: 'long' });
         return (
           <div className="card p-5">
             <div className="flex items-center gap-2.5 mb-4">
@@ -381,7 +384,7 @@ export default function DashboardPage() {
                     </p>
                     <p className="text-xs text-nd-muted">
                       {(() => { const pn = Array.isArray(tx.professional) ? tx.professional[0]?.name : tx.professional?.name; return pn ? `${pn} · ` : ''; })()}
-                      {new Date(tx.transaction_date).toLocaleDateString(locale)}
+                      {spFormatDate(tx.transaction_date, locale)}
                     </p>
                   </div>
                   <span className="text-sm font-semibold text-nd-success shrink-0">

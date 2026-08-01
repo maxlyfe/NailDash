@@ -4,6 +4,11 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
+import { emitDataChange, useLiveData } from '@/lib/live-data';
+import {
+  spMonthRange, spYearRange, spMonthKey, spTodayMonthKey, spTodayKey,
+  spInstant, spFormatDate,
+} from '@/lib/dates';
 import {
   DollarSign, TrendingUp, TrendingDown, Loader2,
   Plus, X, Save, Trash2, CreditCard, Banknote, Smartphone,
@@ -31,6 +36,21 @@ type TxRow = {
   professional_id?: string | null;
   client?: any;
   professional?: any;
+};
+
+/**
+ * Advances are read straight from `appointments` — that row is the source of truth
+ * for what the client actually paid. Reading the mirrored `transactions` rows here
+ * is what let duplicates and orphans inflate the closing totals.
+ */
+type AdvanceRow = {
+  id: string;
+  client_name: string | null;
+  advance_amount: number;
+  advance_payment_method: string | null;
+  status: string;
+  starts_at: string;
+  client?: any;
 };
 
 type MonthlyClosing = {
@@ -62,9 +82,8 @@ export default function FinanceiroPage() {
   const [transactions, setTransactions] = useState<TxRow[]>([]);
   const [closing, setClosing] = useState<MonthlyClosing | null>(null);
   const [prevClosing, setPrevClosing] = useState<MonthlyClosing | null>(null);
-  const [nextMonthAdvances, setNextMonthAdvances] = useState<TxRow[]>([]);
-  const [pendingAdvanceTotal, setPendingAdvanceTotal] = useState(0);
-  const [closedAdvances, setClosedAdvances] = useState<any[]>([]);
+  const [nextMonthAdvances, setNextMonthAdvances] = useState<AdvanceRow[]>([]);
+  const [monthAdvances, setMonthAdvances] = useState<AdvanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<TxModalMode>('closed');
   const [saving, setSaving] = useState(false);
@@ -76,45 +95,32 @@ export default function FinanceiroPage() {
 
   const monthNames = [t.month_0, t.month_1, t.month_2, t.month_3, t.month_4, t.month_5, t.month_6, t.month_7, t.month_8, t.month_9, t.month_10, t.month_11];
 
-  // Current month navigation
-  const [monthDate, setMonthDate] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  });
+  // Current month navigation — "which month is it" is decided in Brasília time
+  const [monthDate, setMonthDate] = useState(() => spTodayMonthKey());
 
+  const [monthYear, monthNumber] = monthDate.split('-').map(Number);
+
+  // Date key used to address the monthly_closings row (a plain date column)
   const monthStart = `${monthDate}-01`;
-  const monthLabel = (() => {
-    const [y, m] = monthDate.split('-');
-    const monthIdx = parseInt(m) - 1;
-    return `${monthNames[monthIdx]} ${y}`;
-  })();
-
-  const monthEndDate = (() => {
-    const [y, m] = monthDate.split('-');
-    const d = new Date(parseInt(y), parseInt(m), 0);
-    return `${y}-${m}-${String(d.getDate()).padStart(2, '0')}`;
-  })();
+  const monthLabel = `${monthNames[monthNumber - 1]} ${monthYear}`;
 
   const prevMonthStart = (() => {
-    const [y, m] = monthDate.split('-').map(Number);
-    const d = new Date(y, m - 2, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    const y = monthNumber === 1 ? monthYear - 1 : monthYear;
+    const m = monthNumber === 1 ? 12 : monthNumber - 1;
+    return `${y}-${String(m).padStart(2, '0')}-01`;
   })();
 
-  const nextMonthRange = (() => {
-    const [y, m] = monthDate.split('-').map(Number);
-    const start = new Date(y, m, 1);
-    const end = new Date(y, m + 1, 0);
-    return {
-      start: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`,
-      end: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`,
-    };
-  })();
+  // Query bounds as absolute instants, so a turno at 21h on the last day of the
+  // month is filed into the month it actually happened in São Paulo.
+  const monthRange = spMonthRange(monthYear, monthNumber);
+  const nextMonthRange = monthNumber === 12
+    ? spMonthRange(monthYear + 1, 1)
+    : spMonthRange(monthYear, monthNumber + 1);
 
   const [form, setForm] = useState({
     description: '', total_amount: '', category: '',
     payment_method: 'pix' as 'pix' | 'cash' | 'card' | 'transfer',
-    installments: '1', transaction_date: new Date().toISOString().split('T')[0],
+    installments: '1', transaction_date: spTodayKey(),
   });
 
   const navigateMonth = (delta: number) => {
@@ -124,17 +130,18 @@ export default function FinanceiroPage() {
   };
 
   // ── Monthly fetch ──
-  const fetchData = useCallback(async () => {
+  // `silent` skips the spinner so live refreshes update the numbers in place
+  const fetchData = useCallback(async (silent = false) => {
     if (!salon?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const [txRes, closingRes, prevClosingRes, nextAdvRes, pendingAdvRes] = await Promise.all([
         supabase
           .from('transactions')
           .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total, client_id, professional_id')
           .eq('salon_id', salon.id)
-          .gte('transaction_date', `${monthStart}T00:00:00`)
-          .lte('transaction_date', `${monthEndDate}T23:59:59`)
+          .gte('transaction_date', monthRange.start)
+          .lte('transaction_date', monthRange.end)
           .order('transaction_date', { ascending: false }),
         supabase
           .from('monthly_closings')
@@ -148,44 +155,43 @@ export default function FinanceiroPage() {
           .eq('salon_id', salon.id)
           .eq('month', prevMonthStart)
           .maybeSingle(),
-        supabase
-          .from('transactions')
-          .select('id, type, description, total_amount, payment_card, payment_cash, payment_transfer, payment_pix, transaction_date, category, installment_number, installment_total')
-          .eq('salon_id', salon.id)
-          .eq('category', 'adiantamento')
-          .gte('transaction_date', `${nextMonthRange.start}T00:00:00`)
-          .lte('transaction_date', `${nextMonthRange.end}T23:59:59`)
-          .gte('registered_at', `${monthStart}T00:00:00`)
-          .lte('registered_at', `${monthEndDate}T23:59:59`),
+        // Every advance already received for next month's turnos, no matter when it
+        // was collected — that is the money physically sitting in the account.
         supabase
           .from('appointments')
-          .select('advance_amount, advance_payment_method, status')
+          .select('id, client_name, advance_amount, advance_payment_method, status, starts_at, client:clients(name)')
           .eq('salon_id', salon.id)
           .gt('advance_amount', 0)
           .neq('status', 'cancelled')
-          .gte('starts_at', `${monthStart}T00:00:00`)
-          .lte('starts_at', `${monthEndDate}T23:59:59`),
+          .gte('starts_at', nextMonthRange.start)
+          .lte('starts_at', nextMonthRange.end)
+          .order('starts_at'),
+        supabase
+          .from('appointments')
+          .select('id, client_name, advance_amount, advance_payment_method, status, starts_at, client:clients(name)')
+          .eq('salon_id', salon.id)
+          .gt('advance_amount', 0)
+          .neq('status', 'cancelled')
+          .gte('starts_at', monthRange.start)
+          .lte('starts_at', monthRange.end),
       ]);
       setTransactions((txRes.data || []) as TxRow[]);
       setClosing(closingRes.data as MonthlyClosing | null);
       setPrevClosing(prevClosingRes.data as MonthlyClosing | null);
-      setNextMonthAdvances((nextAdvRes.data || []) as TxRow[]);
-      const allApptAdv = (pendingAdvRes.data || []) as any[];
-      setPendingAdvanceTotal(allApptAdv.filter((a: any) => a.status !== 'completed').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0));
-      setClosedAdvances(allApptAdv.filter((a: any) => a.status === 'completed'));
+      setNextMonthAdvances((nextAdvRes.data || []) as unknown as AdvanceRow[]);
+      setMonthAdvances((pendingAdvRes.data || []) as unknown as AdvanceRow[]);
     } catch (e) {
       console.error(e);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [salon?.id, monthDate]);
 
   // ── Annual fetch ──
-  const fetchAnnual = useCallback(async () => {
+  const fetchAnnual = useCallback(async (silent = false) => {
     if (!salon?.id) return;
-    setAnnualLoading(true);
+    if (!silent) setAnnualLoading(true);
     try {
-      const startDate = `${annualYear}-01-01T00:00:00`;
-      const endDate = `${annualYear}-12-31T23:59:59`;
+      const { start: startDate, end: endDate } = spYearRange(annualYear);
 
       const [txRes, apptRes] = await Promise.all([
         supabase
@@ -210,13 +216,12 @@ export default function FinanceiroPage() {
         map[m] = { month: m, revenue: 0, expenses: 0, pix: 0, cash: 0, card: 0, transfer: 0 };
       }
 
-      // Use UTC month to match server-side UTC date filtering — avoids grouping
-      // late-evening transactions (UTC-3) into the wrong month.
-      const utcMonth = (iso: string) => new Date(iso).getUTCMonth() + 1;
+      // Group by the São Paulo month, same rule the monthly queries use
+      const monthOf = (iso: string) => Number(spMonthKey(iso).split('-')[1]);
 
       // Transactions
       for (const tx of (txRes.data || []) as any[]) {
-        const m = utcMonth(tx.transaction_date);
+        const m = monthOf(tx.transaction_date);
         if (tx.type === 'sale' && tx.category === 'turno') {
           map[m].revenue += tx.total_amount || 0;
           map[m].pix += tx.payment_pix || 0;
@@ -232,7 +237,7 @@ export default function FinanceiroPage() {
       // (advance is included in the total). Here we only complement the payment method
       // breakdown, since the turno payment_* fields capture only the remaining amount.
       for (const appt of (apptRes.data || []) as any[]) {
-        const m = utcMonth(appt.starts_at);
+        const m = monthOf(appt.starts_at);
         const amt = appt.advance_amount || 0;
         // Do NOT add to revenue — already counted in turno total_amount
         if (appt.advance_payment_method === 'pix') map[m].pix += amt;
@@ -245,7 +250,7 @@ export default function FinanceiroPage() {
     } catch (e) {
       console.error(e);
     }
-    setAnnualLoading(false);
+    if (!silent) setAnnualLoading(false);
   }, [salon?.id, annualYear]);
 
   // Lazy-load names for receitas/despesas
@@ -257,8 +262,8 @@ export default function FinanceiroPage() {
         .from('transactions')
         .select('id, client:clients(name), professional:professionals(name)')
         .eq('salon_id', salon.id)
-        .gte('transaction_date', `${monthStart}T00:00:00`)
-        .lte('transaction_date', `${monthEndDate}T23:59:59`);
+        .gte('transaction_date', monthRange.start)
+        .lte('transaction_date', monthRange.end);
       if (txWithJoins.data) {
         const nameMap = new Map<string, { client: any; professional: any }>(txWithJoins.data.map((t: any) => [t.id, { client: t.client, professional: t.professional }]));
         setTransactions(prev => prev.map(tx => {
@@ -271,11 +276,17 @@ export default function FinanceiroPage() {
     loadNames();
   }, [tab, namesLoaded, salon?.id, transactions.length]);
 
-  useEffect(() => { setNamesLoaded(false); setClosedAdvances([]); }, [monthDate]);
+  useEffect(() => { setNamesLoaded(false); }, [monthDate]);
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => {
     if (tab === 'anual') fetchAnnual();
   }, [tab, fetchAnnual]);
+
+  // Live: any advance, checkout, cancellation or expense recalculates this screen
+  useLiveData(supabase, salon?.id, ['appointments', 'transactions'], () => {
+    fetchData(true);
+    if (tab === 'anual') fetchAnnual(true);
+  });
 
   // ── Monthly computed values ──
   const sales = transactions.filter(t => t.type === 'sale');
@@ -283,10 +294,20 @@ export default function FinanceiroPage() {
   const expenses = transactions.filter(t => t.type === 'expense');
 
   const totalRevenue = turnoSales.reduce((s, t) => s + t.total_amount, 0);
-  const closedAdvPix = closedAdvances.filter((a: any) => a.advance_payment_method === 'pix').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
-  const closedAdvCash = closedAdvances.filter((a: any) => a.advance_payment_method === 'cash').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
-  const closedAdvCard = closedAdvances.filter((a: any) => a.advance_payment_method === 'card').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
-  const closedAdvTransfer = closedAdvances.filter((a: any) => a.advance_payment_method === 'transfer').reduce((s: number, a: any) => s + (a.advance_amount || 0), 0);
+
+  const advTotal = (rows: AdvanceRow[]) => rows.reduce((s, a) => s + (a.advance_amount || 0), 0);
+  const advBy = (rows: AdvanceRow[], method: string) =>
+    advTotal(rows.filter(a => (a.advance_payment_method || 'pix') === method));
+
+  // Advances belonging to this month, split by whether the turno is already closed
+  const closedAdvances = monthAdvances.filter(a => a.status === 'completed');
+  const monthAdvanceTotal = advTotal(monthAdvances);
+  const pendingAdvanceTotal = advTotal(monthAdvances.filter(a => a.status !== 'completed'));
+
+  const closedAdvPix = advBy(closedAdvances, 'pix');
+  const closedAdvCash = advBy(closedAdvances, 'cash');
+  const closedAdvCard = advBy(closedAdvances, 'card');
+  const closedAdvTransfer = advBy(closedAdvances, 'transfer');
 
   const revenuePix = turnoSales.reduce((s, t) => s + t.payment_pix, 0) + closedAdvPix;
   const revenueCash = turnoSales.reduce((s, t) => s + t.payment_cash, 0) + closedAdvCash;
@@ -299,11 +320,11 @@ export default function FinanceiroPage() {
   const expenseCard = expenses.reduce((s, t) => s + t.payment_card, 0);
   const expenseTransfer = expenses.reduce((s, t) => s + t.payment_transfer, 0);
 
-  const totalNextAdvances = nextMonthAdvances.reduce((s, t) => s + t.total_amount, 0);
-  const nextAdvPix = nextMonthAdvances.reduce((s, t) => s + t.payment_pix, 0);
-  const nextAdvCash = nextMonthAdvances.reduce((s, t) => s + t.payment_cash, 0);
-  const nextAdvCard = nextMonthAdvances.reduce((s, t) => s + t.payment_card, 0);
-  const nextAdvTransfer = nextMonthAdvances.reduce((s, t) => s + t.payment_transfer, 0);
+  const totalNextAdvances = advTotal(nextMonthAdvances);
+  const nextAdvPix = advBy(nextMonthAdvances, 'pix');
+  const nextAdvCash = advBy(nextMonthAdvances, 'cash');
+  const nextAdvCard = advBy(nextMonthAdvances, 'card');
+  const nextAdvTransfer = advBy(nextMonthAdvances, 'transfer');
 
   const prevMonthBalance = prevClosing?.starting_balance || 0;
   const startingBalance = closing?.starting_balance ?? prevMonthBalance;
@@ -331,10 +352,14 @@ export default function FinanceiroPage() {
       const installments = parseInt(form.installments) || 1;
       const type = modal === 'receita' ? 'sale' : 'expense';
 
+      const [fy, fm, fd] = form.transaction_date.split('-').map(Number);
+
       for (let i = 0; i < installments; i++) {
         const installmentAmount = installments > 1 ? amount / installments : amount;
-        const txDate = new Date(form.transaction_date);
-        txDate.setMonth(txDate.getMonth() + i);
+        // Midday São Paulo on the chosen date — parsing "2026-07-31" as a plain Date
+        // yields UTC midnight, which lands on the 30th here and filed the lançamento
+        // into the wrong day (and, on the 1st, the wrong month).
+        const txDate = spInstant(fy, fm + i, fd, 12);
 
         const payload: any = {
           salon_id: salon.id,
@@ -358,6 +383,7 @@ export default function FinanceiroPage() {
       setModal('closed');
       await fetchData();
       if (tab === 'anual') fetchAnnual();
+      emitDataChange();
     } catch (e: any) { alert(`${t.error}: ${e.message}`); }
     setSaving(false);
   };
@@ -365,8 +391,9 @@ export default function FinanceiroPage() {
   const handleDelete = async (id: string) => {
     if (!confirm(t.deleteTransactionConfirm)) return;
     await supabase.from('transactions').delete().eq('id', id);
-    fetchData();
+    await fetchData();
     if (tab === 'anual') fetchAnnual();
+    emitDataChange();
   };
 
   const saveClosing = async (field: string, value: number) => {
@@ -380,24 +407,24 @@ export default function FinanceiroPage() {
         [field]: value,
       });
     }
-    fetchData();
+    await fetchData();
+    emitDataChange();
   };
 
   const autoFillStartingBalance = async () => {
     if (!salon?.id) return;
-    const [y, m] = monthDate.split('-').map(Number);
-    const prevStart = new Date(y, m - 2, 1);
-    const prevEnd = new Date(y, m - 1, 0);
-    const prevStartStr = `${prevStart.getFullYear()}-${String(prevStart.getMonth() + 1).padStart(2, '0')}-01`;
-    const prevEndStr = `${prevStart.getFullYear()}-${String(prevStart.getMonth() + 1).padStart(2, '0')}-${String(prevEnd.getDate()).padStart(2, '0')}`;
+    const prevYear = monthNumber === 1 ? monthYear - 1 : monthYear;
+    const prevMonth = monthNumber === 1 ? 12 : monthNumber - 1;
+    const prevStartStr = prevMonthStart;
+    const prevRange = spMonthRange(prevYear, prevMonth);
 
     const [prevTxRes, prevClRes] = await Promise.all([
       supabase
         .from('transactions')
         .select('type, total_amount, category')
         .eq('salon_id', salon.id)
-        .gte('transaction_date', `${prevStartStr}T00:00:00`)
-        .lte('transaction_date', `${prevEndStr}T23:59:59`),
+        .gte('transaction_date', prevRange.start)
+        .lte('transaction_date', prevRange.end),
       supabase
         .from('monthly_closings')
         .select('starting_balance')
@@ -417,7 +444,7 @@ export default function FinanceiroPage() {
     setForm({
       description: '', total_amount: '', category: '',
       payment_method: 'pix', installments: '1',
-      transaction_date: new Date().toISOString().split('T')[0],
+      transaction_date: spTodayKey(),
     });
     setModal(type);
   };
@@ -437,6 +464,11 @@ export default function FinanceiroPage() {
   const getClientName = (tx: TxRow) => {
     if (!tx.client) return null;
     return Array.isArray(tx.client) ? tx.client[0]?.name : tx.client?.name;
+  };
+
+  const getAdvanceName = (adv: AdvanceRow) => {
+    const joined = Array.isArray(adv.client) ? adv.client[0]?.name : adv.client?.name;
+    return joined || adv.client_name || t.client;
   };
 
   return (
@@ -513,7 +545,14 @@ export default function FinanceiroPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <StatCard label={t.billing} value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
                   <StatCard label={t.expenses} value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
-                  <StatCard label={t.advances || 'Adiantamentos'} value={fmt(pendingAdvanceTotal)} color="text-nd-accent" icon={ArrowRightLeft} iconBg="bg-nd-accent/10" />
+                  <StatCard
+                    label={t.advances || 'Adiantamentos'}
+                    value={fmt(monthAdvanceTotal)}
+                    color="text-nd-accent"
+                    icon={ArrowRightLeft}
+                    iconBg="bg-nd-accent/10"
+                    hint={pendingAdvanceTotal > 0 ? `${fmt(pendingAdvanceTotal)} ${t.advancesOpenShifts}` : undefined}
+                  />
                   <StatCard label={t.balance} value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
                 </div>
 
@@ -654,8 +693,13 @@ export default function FinanceiroPage() {
                           <div className="space-y-1 pl-6">
                             {nextMonthAdvances.map(adv => (
                               <div key={adv.id} className="flex justify-between text-xs">
-                                <span className="text-nd-muted truncate mr-2">{adv.description}</span>
-                                <span className="text-nd-warning font-medium shrink-0">{fmt(adv.total_amount)}</span>
+                                <span className="text-nd-muted truncate mr-2">
+                                  {getAdvanceName(adv)}
+                                  <span className="text-nd-muted/60 ml-1">
+                                    {spFormatDate(adv.starts_at, locale, { day: '2-digit', month: '2-digit' })}
+                                  </span>
+                                </span>
+                                <span className="text-nd-warning font-medium shrink-0">{fmt(adv.advance_amount)}</span>
                               </div>
                             ))}
                           </div>
@@ -953,8 +997,8 @@ export default function FinanceiroPage() {
 
 // ── Sub-components ──
 
-function StatCard({ label, value, color, icon: Icon, iconBg }: {
-  label: string; value: string; color: string; icon: any; iconBg: string;
+function StatCard({ label, value, color, icon: Icon, iconBg, hint }: {
+  label: string; value: string; color: string; icon: any; iconBg: string; hint?: string;
 }) {
   return (
     <div className="card-glow p-4">
@@ -965,6 +1009,7 @@ function StatCard({ label, value, color, icon: Icon, iconBg }: {
         <span className="section-label">{label}</span>
       </div>
       <p className={`text-sm sm:text-xl font-bold ${color} truncate`}>{value}</p>
+      {hint && <p className="text-[10px] text-nd-muted mt-0.5 truncate">{hint}</p>}
     </div>
   );
 }
@@ -1049,7 +1094,7 @@ function TxList({ items, emptyLabel, colorClass, prefix, fmt, onDelete, getClien
                 {getClientName(tx) && <span className="text-[10px] sm:text-xs text-nd-muted">{getClientName(tx)}</span>}
                 {tx.category && <span className="badge-muted text-[9px]">{tx.category}</span>}
                 <span className="text-[10px] sm:text-xs text-nd-muted/60">
-                  {new Date(tx.transaction_date).toLocaleDateString(locale)}
+                  {spFormatDate(tx.transaction_date, locale)}
                 </span>
               </div>
             </div>
