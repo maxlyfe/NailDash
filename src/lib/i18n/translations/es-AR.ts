@@ -213,6 +213,8 @@ const esAR: Translations = {
   nextMonthAdvances: 'Adelantos del próximo mes',
   totalAdvances: 'Total adelantos',
   advancesOpenShifts: 'en turnos aún abiertos',
+  advancesOpen: 'Adelantos pendientes',
+  advancesReceivedMonth: 'recibidos en el mes',
   bankReconciliation: 'Conciliación bancaria',
   realAccountValue: 'Valor real en cuenta/caja',
   deleteTransactionConfirm: '¿Eliminar esta transacción?',

@@ -299,7 +299,12 @@ export default function FinanceiroPage() {
   const advBy = (rows: AdvanceRow[], method: string) =>
     advTotal(rows.filter(a => (a.advance_payment_method || 'pix') === method));
 
-  // Advances belonging to this month, split by whether the turno is already closed
+  // Advances belonging to this month, split by whether the turno is already closed.
+  // `pendingAdvanceTotal` is the headline number: money already received that is still
+  // being held for open turnos — the same thing the Dashboard shows for today. Once the
+  // turno is closed the advance stops being held money and becomes faturamento, so it
+  // leaves this figure. `monthAdvanceTotal` (everything received in the month, closed or
+  // not) stays as the hint, and still feeds the payment-method breakdown below.
   const closedAdvances = monthAdvances.filter(a => a.status === 'completed');
   const monthAdvanceTotal = advTotal(monthAdvances);
   const pendingAdvanceTotal = advTotal(monthAdvances.filter(a => a.status !== 'completed'));
@@ -546,12 +551,12 @@ export default function FinanceiroPage() {
                   <StatCard label={t.billing} value={fmt(totalRevenue)} color="text-nd-success" icon={TrendingUp} iconBg="bg-nd-success/10" />
                   <StatCard label={t.expenses} value={fmt(totalExpenses)} color="text-nd-danger" icon={TrendingDown} iconBg="bg-nd-danger/10" />
                   <StatCard
-                    label={t.advances || 'Adiantamentos'}
-                    value={fmt(monthAdvanceTotal)}
+                    label={t.advancesOpen}
+                    value={fmt(pendingAdvanceTotal)}
                     color="text-nd-accent"
                     icon={ArrowRightLeft}
                     iconBg="bg-nd-accent/10"
-                    hint={pendingAdvanceTotal > 0 ? `${fmt(pendingAdvanceTotal)} ${t.advancesOpenShifts}` : undefined}
+                    hint={monthAdvanceTotal > 0 ? `${fmt(monthAdvanceTotal)} ${t.advancesReceivedMonth}` : undefined}
                   />
                   <StatCard label={t.balance} value={fmt(fundoCaixa)} color={fundoCaixa >= 0 ? 'text-nd-accent' : 'text-nd-danger'} icon={PiggyBank} iconBg="bg-nd-accent/10" />
                 </div>

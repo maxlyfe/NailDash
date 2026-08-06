@@ -211,6 +211,8 @@ const ptBR = {
   nextMonthAdvances: 'Adiantamentos do próximo mês',
   totalAdvances: 'Total adiantamentos',
   advancesOpenShifts: 'em turnos ainda abertos',
+  advancesOpen: 'Adiantamentos em aberto',
+  advancesReceivedMonth: 'recebidos no mês',
   bankReconciliation: 'Conciliação bancária',
   realAccountValue: 'Valor real na conta/caixa',
   deleteTransactionConfirm: 'Excluir esta transação?',
