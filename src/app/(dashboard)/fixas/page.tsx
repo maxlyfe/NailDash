@@ -570,8 +570,8 @@ function SummaryCard({ label, value, hint, icon: Icon, color, iconBg }: {
         </div>
         <span className="section-label">{label}</span>
       </div>
-      <p className={`text-sm sm:text-xl font-bold ${color} truncate`}>{value}</p>
-      {hint && <p className="text-[10px] text-nd-muted mt-0.5 truncate">{hint}</p>}
+      <p className={`text-sm sm:text-xl font-bold ${color} leading-tight break-words`}>{value}</p>
+      {hint && <p className="text-[10px] text-nd-muted mt-0.5 break-words">{hint}</p>}
     </div>
   );
 }
@@ -587,6 +587,11 @@ function ClientRow({ row, expanded, onToggle, formatCurrency, locale, t }: {
 }) {
   const link = waLink(row.phone);
 
+  /*
+   * No celular o valor vai para a própria linha, abaixo do nome: em pesos
+   * ("$ 149.400,00") ele come a largura toda e o nome sobra como "M…".
+   * A partir de sm volta para a direita, onde cabe.
+   */
   const inner = (
     <>
       <div className="w-10 h-10 rounded-xl bg-nd-accent/10 flex items-center justify-center shrink-0">
@@ -596,15 +601,15 @@ function ClientRow({ row, expanded, onToggle, formatCurrency, locale, t }: {
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-nd-heading truncate">{row.name}</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-semibold text-nd-heading break-words">{row.name}</p>
           {row.badge && (
             <span className={`badge shrink-0 ${row.badgeWarn ? 'badge-warning' : 'badge-muted'}`}>
               {row.badge}
             </span>
           )}
         </div>
-        <p className="text-xs text-nd-muted truncate">
+        <p className="text-xs text-nd-muted mt-0.5 sm:truncate">
           {row.visits} {t.visitsShort}
           {' · '}
           {t.avgTicket} {formatCurrency(row.avgTicket)}
@@ -612,9 +617,12 @@ function ClientRow({ row, expanded, onToggle, formatCurrency, locale, t }: {
             <> {' · '}{spFormatDate(row.lastVisitAt, locale, { day: '2-digit', month: '2-digit' })}</>
           )}
         </p>
+        <p className="mono-value text-sm text-nd-heading mt-1 sm:hidden">
+          {formatCurrency(row.totalSpent)}
+        </p>
       </div>
 
-      <span className="mono-value text-sm text-nd-heading shrink-0">
+      <span className="mono-value text-sm text-nd-heading shrink-0 hidden sm:inline">
         {formatCurrency(row.totalSpent)}
       </span>
     </>
@@ -627,7 +635,7 @@ function ClientRow({ row, expanded, onToggle, formatCurrency, locale, t }: {
         <button
           onClick={onToggle}
           aria-expanded={expanded}
-          className="flex items-center gap-3 flex-1 min-w-0 p-4 text-left hover:bg-nd-surface/40 transition-colors"
+          className="flex items-start sm:items-center gap-3 flex-1 min-w-0 p-4 text-left hover:bg-nd-surface/40 transition-colors"
         >
           {inner}
           <ChevronDown
@@ -635,7 +643,7 @@ function ClientRow({ row, expanded, onToggle, formatCurrency, locale, t }: {
           />
         </button>
       ) : (
-        <div className="flex items-center gap-3 flex-1 min-w-0 p-4">
+        <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0 p-4">
           {inner}
           <span className="w-4 shrink-0" />
         </div>

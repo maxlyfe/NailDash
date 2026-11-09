@@ -106,6 +106,15 @@ export default function ClientDetail({
 
   const orphanNotes = timeline.filter(n => !n.appointment_id);
 
+  /*
+   * Os totais saem do histórico, não das colunas clients.total_spent /
+   * last_visit_at: nada no app escreve nessas colunas, então elas ficam
+   * zeradas e o card mostrava "Total 0" para cliente com atendimentos.
+   */
+  const completed = history.filter(a => a.status === 'completed');
+  const totalSpent = completed.reduce((sum, a) => sum + (a.total_amount || 0), 0);
+  const lastVisitAt = completed[0]?.starts_at || client?.last_visit_at || null;
+
   return (
     <div className={inline ? 'p-4 space-y-4' : 'p-6 space-y-5'}>
       {/* Cabeçalho: só no modal — em /fixas o nome já está na linha acima */}
@@ -118,9 +127,9 @@ export default function ClientDetail({
           </div>
           <div>
             <h3 className="text-lg font-semibold text-nd-heading">{client.name}</h3>
-            {client.last_visit_at && (
+            {lastVisitAt && (
               <p className="text-xs text-nd-muted mt-0.5">
-                {t.lastVisit} {spFormatDate(client.last_visit_at, locale)}
+                {t.lastVisit} {spFormatDate(lastVisitAt, locale)}
               </p>
             )}
           </div>
@@ -132,20 +141,20 @@ export default function ClientDetail({
         {inline && <p className="section-label mb-2">{t.totalAllTime}</p>}
         <div className="grid grid-cols-3 gap-3">
           <div className="card-glow p-3 text-center">
-            <p className="text-lg font-bold text-nd-heading">
-              {history.filter(a => a.status === 'completed').length}
+            <p className="text-base sm:text-lg font-bold text-nd-heading leading-tight">
+              {completed.length}
             </p>
             <p className="text-[10px] text-nd-muted uppercase">{t.visits}</p>
           </div>
           <div className="card-glow p-3 text-center">
-            <p className="text-lg font-bold text-nd-heading">
-              {formatCurrency(client?.total_spent || 0)}
+            <p className="text-sm sm:text-lg font-bold text-nd-heading leading-tight break-words">
+              {formatCurrency(totalSpent)}
             </p>
             <p className="text-[10px] text-nd-muted uppercase">{t.total}</p>
           </div>
           <div className="card-glow p-3 text-center">
-            <p className="text-lg font-bold text-nd-heading flex items-center justify-center gap-1">
-              <Star className="w-3.5 h-3.5 text-nd-warning" /> {client?.loyalty_points || 0}
+            <p className="text-base sm:text-lg font-bold text-nd-heading flex items-center justify-center gap-1 leading-tight">
+              <Star className="w-3.5 h-3.5 text-nd-warning shrink-0" /> {client?.loyalty_points || 0}
             </p>
             <p className="text-[10px] text-nd-muted uppercase">{t.points}</p>
           </div>
@@ -227,7 +236,7 @@ export default function ClientDetail({
                   )}
 
                   {!isCancelled && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <DollarSign className="w-3 h-3 text-nd-success shrink-0" />
                       <p className="text-sm font-semibold text-nd-heading">
                         {formatCurrency(appt.total_amount)}
