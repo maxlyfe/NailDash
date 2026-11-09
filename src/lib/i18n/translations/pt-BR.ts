@@ -339,6 +339,7 @@ const ptBR = {
   sortVisits: 'Mais visitas',
   noneServedInPeriod: 'Nenhuma cliente atendida nesse período',
   invalidRange: 'A data inicial é depois da final',
+  invalidDate: 'Preencha uma data válida',
 
   // ── Short day names (agenda headers) ──
   dayShort_sun: 'Dom',

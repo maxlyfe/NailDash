@@ -341,6 +341,7 @@ const esAR: Translations = {
   sortVisits: 'Más visitas',
   noneServedInPeriod: 'Ninguna clienta atendida en ese período',
   invalidRange: 'La fecha inicial es posterior a la final',
+  invalidDate: 'Completá una fecha válida',
 
   // ── Short day names (agenda headers) ──
   dayShort_sun: 'Dom',

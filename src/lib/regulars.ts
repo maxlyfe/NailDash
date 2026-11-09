@@ -11,7 +11,7 @@
  * o dia certo seja o dia certo independente de DST.
  */
 
-import { spInstant, spNow, spParts, spDateKey } from './dates';
+import { spInstant, spNow, spParts, spDateKey, isDateKey } from './dates';
 
 export type Cadence = 21 | 30 | 60;
 
@@ -262,9 +262,11 @@ export type PeriodSummary = {
 
 /** Dias de calendário entre duas chaves "YYYY-MM-DD", contando as duas pontas. */
 function daysBetweenKeys(fromKey: string, toKey: string): number {
+  // Chaves digitadas pelo usuário podem vir vazias ou pela metade; sem isso o
+  // cálculo devolve NaN e vaza para a tela.
+  if (!isDateKey(fromKey) || !isDateKey(toKey)) return 0;
   const [fy, fm, fd] = fromKey.split('-').map(Number);
   const [ty, tm, td] = toKey.split('-').map(Number);
-  if (!fy || !ty) return 0;
   const a = spInstant(fy, fm, fd).getTime();
   const b = spInstant(ty, tm, td).getTime();
   if (b < a) return 0;

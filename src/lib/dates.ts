@@ -131,6 +131,27 @@ export function spFromDateAndTime(dateKey: string, time: string): string {
   return spFromInput(`${dateKey}T${time}`);
 }
 
+/**
+ * True when `value` is a real calendar day written as "YYYY-MM-DD".
+ *
+ * Needed because `<input type="date">` hands us an empty or half-typed value
+ * while the user is still typing ("" or "2026-11"), and those reach Date as NaN
+ * — every formatter here then throws RangeError. It also rejects days that do
+ * not exist, such as "2026-11-31", which Date would silently roll over to
+ * 1 December. Validate user-typed keys with this before passing them to
+ * spFromDateKey / spDayKeyRange.
+ */
+export function isDateKey(value: string | null | undefined): boolean {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  // Round-trip through UTC: a rolled-over day comes back different.
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  return probe.getUTCFullYear() === y
+    && probe.getUTCMonth() === m - 1
+    && probe.getUTCDate() === d;
+}
+
 /** Noon São Paulo on the given day — a safe anchor for date-only fields. */
 export function spFromDateKey(dateKey: string): string {
   const [y, m, d] = dateKey.split('-').map(Number);

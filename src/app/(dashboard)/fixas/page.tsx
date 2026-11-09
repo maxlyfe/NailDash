@@ -6,7 +6,7 @@ import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import { useLiveData } from '@/lib/live-data';
 import {
-  spNow, spInstant, spFormatDate, spTodayKey, spDayKeyRange, spFromDateKey,
+  spNow, spInstant, spFormatDate, spTodayKey, spDayKeyRange, spFromDateKey, isDateKey,
 } from '@/lib/dates';
 import { waLink } from '@/lib/phone';
 import {
@@ -77,7 +77,11 @@ export default function FixasPage() {
   const [periodInfo, setPeriodInfo] = useState<Map<string, PersonInfo>>(new Map());
   const [periodLoading, setPeriodLoading] = useState(false);
 
-  const rangeInvalid = fromKey > toKey;
+  // <input type="date"> entrega "" ou "2026-11" enquanto se digita, e aceita
+  // dias inexistentes como 31/11 — nada disso pode chegar aos formatadores.
+  const datesValid = isDateKey(fromKey) && isDateKey(toKey);
+  const outOfOrder = datesValid && fromKey > toKey;
+  const rangeInvalid = !datesValid || outOfOrder;
 
   const fetchVisits = useCallback(async (silent = false) => {
     if (!salon?.id) return;
@@ -122,7 +126,7 @@ export default function FixasPage() {
 
   /** Atendimentos do intervalo escolhido, walk-ins incluídos. */
   const fetchPeriod = useCallback(async (silent = false) => {
-    if (!salon?.id || fromKey > toKey) return;
+    if (!salon?.id || !isDateKey(fromKey) || !isDateKey(toKey) || fromKey > toKey) return;
     if (!silent) setPeriodLoading(true);
 
     const { start, end } = spDayKeyRange(fromKey, toKey);
@@ -255,7 +259,9 @@ export default function FixasPage() {
   const busy = mode === 'period' ? periodLoading : loading;
 
   const ruleText = mode === 'period'
-    ? `${spFormatDate(spFromDateKey(fromKey), locale)} — ${spFormatDate(spFromDateKey(toKey), locale)}`
+    ? (datesValid
+        ? `${spFormatDate(spFromDateKey(fromKey), locale)} — ${spFormatDate(spFromDateKey(toKey), locale)}`
+        : '—')
     : t.regularsRule
       .replace('{c}', String(cadence))
       .replace('{w}', `${cadence * depth} ${t.days}`);
@@ -396,7 +402,7 @@ export default function FixasPage() {
               <input
                 type="date"
                 value={fromKey}
-                max={toKey}
+                max={isDateKey(toKey) ? toKey : undefined}
                 onChange={e => { setFromKey(e.target.value); setOpenId(null); }}
                 className="input-field"
               />
@@ -406,7 +412,7 @@ export default function FixasPage() {
               <input
                 type="date"
                 value={toKey}
-                min={fromKey}
+                min={isDateKey(fromKey) ? fromKey : undefined}
                 onChange={e => { setToKey(e.target.value); setOpenId(null); }}
                 className="input-field"
               />
@@ -434,7 +440,8 @@ export default function FixasPage() {
 
           {rangeInvalid && (
             <p className="text-xs text-nd-danger flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5" /> {t.invalidRange}
+              <AlertTriangle className="w-3.5 h-3.5" />
+              {outOfOrder ? t.invalidRange : t.invalidDate}
             </p>
           )}
         </div>
