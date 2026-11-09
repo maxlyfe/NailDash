@@ -305,6 +305,27 @@ const esAR: Translations = {
   noAppointments: 'Ningún turno encontrado',
   deleteNoteConfirm: '¿Eliminar esta observación del historial?',
 
+  // ── Clientas fijas ──
+  regulars: 'Clientas Fijas',
+  regularsSubtitle: 'Quiénes se atienden con regularidad',
+  cadence: 'Cadencia',
+  cadenceEvery: 'cada',
+  days: 'días',
+  lastDays: 'últimos',
+  regularsRule: '1 visita cada {c} días, en los últimos {w}',
+  regularsTab: 'Fijas',
+  atRiskTab: 'En riesgo',
+  atRiskHint: 'Cumplían la regla y fallaron en el período más reciente',
+  noRegularsYet: 'Ninguna clienta cumple esta regla',
+  noRegularsHint: 'Probá con una cadencia mayor o una ventana más corta.',
+  noAtRisk: 'Nadie rompió la regla en este período',
+  visitsShort: 'visitas',
+  totalInWindow: 'Total del período',
+  daysAgo: 'hace {n} días',
+  openWhatsapp: 'Abrir en WhatsApp',
+  regularsCount: 'fija(s)',
+  totalAllTime: 'En total',
+
   // ── Short day names (agenda headers) ──
   dayShort_sun: 'Dom',
   dayShort_mon: 'Lun',

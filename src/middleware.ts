@@ -41,7 +41,9 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/clientes') ||
     request.nextUrl.pathname.startsWith('/servicos') ||
     request.nextUrl.pathname.startsWith('/financeiro') ||
-    request.nextUrl.pathname.startsWith('/profissionais');
+    request.nextUrl.pathname.startsWith('/profissionais') ||
+    request.nextUrl.pathname.startsWith('/fixas') ||
+    request.nextUrl.pathname.startsWith('/configuracoes');
 
   if (isProtected && !user) {
     return NextResponse.redirect(new URL('/login', request.url));

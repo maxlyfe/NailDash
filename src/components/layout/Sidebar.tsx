@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Sparkles,
   Settings,
+  Repeat,
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -33,6 +34,7 @@ export default function Sidebar() {
     { label: t.services, href: '/servicos', icon: Scissors },
     { label: t.financial, href: '/financeiro', icon: DollarSign },
     { label: t.team, href: '/profissionais', icon: UserCog },
+    { label: t.regulars, href: '/fixas', icon: Repeat },
     { label: t.settings, href: '/configuracoes', icon: Settings },
   ];
 

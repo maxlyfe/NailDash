@@ -303,6 +303,27 @@ const ptBR = {
   noAppointments: 'Nenhum atendimento encontrado',
   deleteNoteConfirm: 'Excluir esta observação do histórico?',
 
+  // ── Clientes fixas ──
+  regulars: 'Clientes Fixas',
+  regularsSubtitle: 'Quem se atende com regularidade',
+  cadence: 'Cadência',
+  cadenceEvery: 'a cada',
+  days: 'dias',
+  lastDays: 'últimos',
+  regularsRule: '1 visita a cada {c} dias, nos últimos {w}',
+  regularsTab: 'Fixas',
+  atRiskTab: 'Em risco',
+  atRiskHint: 'Cumpriam a régua e falharam no período mais recente',
+  noRegularsYet: 'Nenhuma cliente cumpre essa régua',
+  noRegularsHint: 'Tente uma cadência maior ou uma janela mais curta.',
+  noAtRisk: 'Ninguém furou a régua neste período',
+  visitsShort: 'visitas',
+  totalInWindow: 'Total no período',
+  daysAgo: 'há {n} dias',
+  openWhatsapp: 'Abrir no WhatsApp',
+  regularsCount: 'fixa(s)',
+  totalAllTime: 'No total',
+
   // ── Short day names (agenda headers) ──
   dayShort_sun: 'Dom',
   dayShort_mon: 'Seg',
