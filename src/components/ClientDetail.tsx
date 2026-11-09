@@ -13,6 +13,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useT } from '@/contexts/LanguageContext';
 import { useSupabase } from '@/lib/supabase/use-supabase';
 import { spFormatDate } from '@/lib/dates';
+import { clientTotals } from '@/lib/client-stats';
 import type { Client, ClientNote, Appointment } from '@/lib/types';
 import {
   Phone, Mail, Star, History, Loader2, Trash2, Edit3,
@@ -111,9 +112,8 @@ export default function ClientDetail({
    * last_visit_at: nada no app escreve nessas colunas, então elas ficam
    * zeradas e o card mostrava "Total 0" para cliente com atendimentos.
    */
-  const completed = history.filter(a => a.status === 'completed');
-  const totalSpent = completed.reduce((sum, a) => sum + (a.total_amount || 0), 0);
-  const lastVisitAt = completed[0]?.starts_at || client?.last_visit_at || null;
+  const totals = clientTotals(history);
+  const lastVisitAt = totals.lastVisitAt || client?.last_visit_at || null;
 
   return (
     <div className={inline ? 'p-4 space-y-4' : 'p-6 space-y-5'}>
@@ -142,13 +142,13 @@ export default function ClientDetail({
         <div className="grid grid-cols-3 gap-3">
           <div className="card-glow p-3 text-center">
             <p className="text-base sm:text-lg font-bold text-nd-heading leading-tight">
-              {completed.length}
+              {totals.visits}
             </p>
             <p className="text-[10px] text-nd-muted uppercase">{t.visits}</p>
           </div>
           <div className="card-glow p-3 text-center">
             <p className="text-sm sm:text-lg font-bold text-nd-heading leading-tight break-words">
-              {formatCurrency(totalSpent)}
+              {formatCurrency(totals.totalSpent)}
             </p>
             <p className="text-[10px] text-nd-muted uppercase">{t.total}</p>
           </div>
