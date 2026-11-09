@@ -11,7 +11,7 @@
  * o dia certo seja o dia certo independente de DST.
  */
 
-import { spInstant, spNow, spParts } from './dates';
+import { spInstant, spNow, spParts, spDateKey } from './dates';
 
 export type Cadence = 21 | 30 | 60;
 
@@ -175,6 +175,134 @@ export function classify(visits: Visit[], cadence: Cadence, depth: number): Clas
   atRisk.sort(byValue);
 
   return { regulars, atRisk };
+}
+
+/* ─── Período livre ─── */
+
+export type PeriodSort = 'recent' | 'spent' | 'visits';
+
+export const PERIOD_SORTS: PeriodSort[] = ['recent', 'spent', 'visits'];
+
+/**
+ * Visita no modo período. `key` identifica a pessoa: o id da cliente quando há
+ * cadastro, ou uma chave sintética para o atendimento avulso (walk-in).
+ */
+export type PeriodVisit = { key: string; at: string; amount: number };
+
+export type PeriodRow = {
+  key: string;
+  visits: number;
+  totalSpent: number;
+  avgTicket: number;
+  lastVisitAt: string;
+  daysSinceLastVisit: number;
+};
+
+/**
+ * Agrupa os atendimentos de um intervalo por pessoa. Diferente de `classify`,
+ * não há régua nenhuma: quem tem ao menos um atendimento no intervalo entra.
+ */
+export function aggregatePeriod(visits: PeriodVisit[], sort: PeriodSort): PeriodRow[] {
+  const now = spNow();
+  const todayStart = spInstant(now.year, now.month, now.day).getTime();
+
+  const acc = new Map<string, { visits: number; totalSpent: number; lastVisitAt: string }>();
+
+  for (const v of visits) {
+    const cur = acc.get(v.key);
+    if (!cur) {
+      acc.set(v.key, { visits: 1, totalSpent: v.amount || 0, lastVisitAt: v.at });
+      continue;
+    }
+    cur.visits += 1;
+    cur.totalSpent += v.amount || 0;
+    if (new Date(v.at).getTime() > new Date(cur.lastVisitAt).getTime()) {
+      cur.lastVisitAt = v.at;
+    }
+  }
+
+  const rows: PeriodRow[] = [];
+  acc.forEach((a, key) => {
+    rows.push({
+      key,
+      visits: a.visits,
+      totalSpent: a.totalSpent,
+      avgTicket: a.visits > 0 ? a.totalSpent / a.visits : 0,
+      lastVisitAt: a.lastVisitAt,
+      daysSinceLastVisit: calendarDaysSince(a.lastVisitAt, todayStart),
+    });
+  });
+
+  rows.sort((x, y) => {
+    if (sort === 'spent') return y.totalSpent - x.totalSpent;
+    if (sort === 'visits') return y.visits - x.visits || y.totalSpent - x.totalSpent;
+    // 'recent'
+    return new Date(y.lastVisitAt).getTime() - new Date(x.lastVisitAt).getTime();
+  });
+
+  return rows;
+}
+
+export type PeriodSummary = {
+  /** Pessoas distintas atendidas. */
+  clients: number;
+  /** Turnos (atendimentos concluídos) no intervalo. */
+  appointments: number;
+  totalRevenue: number;
+  avgTicket: number;
+  /** Dias de calendário do intervalo, incluindo as duas pontas. */
+  calendarDays: number;
+  /** Dias em que houve ao menos um atendimento. */
+  activeDays: number;
+  /** Receita ÷ dias de calendário. */
+  perCalendarDay: number;
+  /** Receita ÷ dias com movimento — ignora os dias fechados. */
+  perActiveDay: number;
+};
+
+/** Dias de calendário entre duas chaves "YYYY-MM-DD", contando as duas pontas. */
+function daysBetweenKeys(fromKey: string, toKey: string): number {
+  const [fy, fm, fd] = fromKey.split('-').map(Number);
+  const [ty, tm, td] = toKey.split('-').map(Number);
+  if (!fy || !ty) return 0;
+  const a = spInstant(fy, fm, fd).getTime();
+  const b = spInstant(ty, tm, td).getTime();
+  if (b < a) return 0;
+  return Math.round((b - a) / 86_400_000) + 1;
+}
+
+/**
+ * Números do cabeçalho do modo período. `perCalendarDay` e `perActiveDay`
+ * existem os dois de propósito: a média sobre o calendário dilui os dias
+ * fechados, a média sobre os dias com movimento mostra o ritmo real de trabalho.
+ */
+export function summarizePeriod(
+  visits: PeriodVisit[], fromKey: string, toKey: string,
+): PeriodSummary {
+  const people = new Set<string>();
+  const activeDayKeys = new Set<string>();
+  let totalRevenue = 0;
+
+  for (const v of visits) {
+    people.add(v.key);
+    activeDayKeys.add(spDateKey(v.at));
+    totalRevenue += v.amount || 0;
+  }
+
+  const appointments = visits.length;
+  const calendarDays = daysBetweenKeys(fromKey, toKey);
+  const activeDays = activeDayKeys.size;
+
+  return {
+    clients: people.size,
+    appointments,
+    totalRevenue,
+    avgTicket: appointments > 0 ? totalRevenue / appointments : 0,
+    calendarDays,
+    activeDays,
+    perCalendarDay: calendarDays > 0 ? totalRevenue / calendarDays : 0,
+    perActiveDay: activeDays > 0 ? totalRevenue / activeDays : 0,
+  };
 }
 
 /** Quantas fixas em cada profundidade oferecida para a cadência. */
